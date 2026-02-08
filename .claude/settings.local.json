@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(dir:*)",
+      "Bash(/dev/null -exec file {} ;)",
+      "Bash(node --version:*)",
+      "Bash(npm:*)",
+      "Bash(npx bmad-method:*)",
+      "Bash(printf:*)",
+      "Bash(where:*)",
+      "Bash(npx bmad-method@6.0.0-Beta.7:*)",
+      "Bash(node:*)",
+      "Bash(gh auth status:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\")",
+      "Bash(gh auth login:*)",
+      "Bash(git init:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# BMAD Output (artifacts are project-specific, not template)
+# Uncomment the line below if you want to track your artifacts
+# _bmad-output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build
+dist/
+build/
+.next/
+out/
