@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.productivity.it" ExtensionBundleVersion="1.0.0" ExtensionBundleName="Productivity" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ExtensionList>
+        <Extension Id="com.productivity.it" Version="1.0" />
+    </ExtensionList>
+    <ExecutionEnvironment>
+        <HostList>
+            <Host Name="PPRO" Version="[15.0,99.0]" />
+        </HostList>
+
+        <LocaleList>
+            <Locale Code="All" />
+        </LocaleList>
+        <RequiredRuntimeList>
+            <RequiredRuntime Name="CSXS" Version="6.0" />
+        </RequiredRuntimeList>
+    </ExecutionEnvironment>
+    <DispatchInfoList>
+        <Extension Id="com.productivity.it">
+            <DispatchInfo>
+                <Resources>
+                    <MainPath>./src/pages/index.html</MainPath>
+                    <ScriptPath>./src/jsx/Premiere.jsx</ScriptPath>
+                </Resources>
+                <CEFCommandLine>
+                    <Parameter>--enable-nodejs</Parameter>
+                    <Parameter>--allow-file-access</Parameter>
+                    <Parameter>--allow-file-access-from-files</Parameter>
+                </CEFCommandLine>
+
+                <!-- Secure Content Security Policy -->
+                <ContentSecurityPolicy>
+                    default-src 'self';
+                    script-src 'self';
+                    connect-src 'self' https://api.openai.com http://localhost;
+                    style-src 'self' 'unsafe-inline';
+                    img-src 'self' data:;
+                    font-src 'self';
+                </ContentSecurityPolicy>
+
+                <Lifecycle>
+                    <AutoVisible>true</AutoVisible>
+                </Lifecycle>
+                <UI>
+                    <Type>Panel</Type>
+                    <Menu>Productivity</Menu>
+                    <Geometry>
+                        <Size>
+                            <Height>500</Height>
+                            <Width>850</Width>
+                        </Size>
+                    </Geometry>
+                </UI>
+            </DispatchInfo>
+        </Extension>
+    </DispatchInfoList>
+
+</ExtensionManifest>

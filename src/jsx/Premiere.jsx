@@ -1987,9 +1987,10 @@ function runPythonTranscription(extensionPath, audioPath, goal, file) {
 
             $.sleep(1000);
 
-            if (waitForLogAndLoadJSON(audioPath, goal, file)) {
+            var transcriptionData = waitForLogAndLoadJSON(audioPath, goal, file);
+            if (transcriptionData) {
                 notif("Transcription terminée", "success");
-                return "SCRIPT_EXECUTED";
+                return JSON.stringify(transcriptionData);
             } else {
                 notif("Transcription échouée, relancez à nouveau", "error");
                 return "TRANSCRIPTION_FAILED";

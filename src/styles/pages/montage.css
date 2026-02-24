@@ -1,0 +1,71 @@
+.b-roll-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start !important;
+}
+
+.b-roll-content .desc {
+    margin-bottom: 20px;
+}
+
+.b-roll-content button {
+    width: 100%;
+}
+
+
+.imgTemplate{
+    width: 100%;
+    height: 200px;
+    margin-top: 20px;
+    
+}
+
+.imgTemplate video{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    border-radius: 20px;
+}
+
+
+.form-b-roll {
+    gap: 20px !important;
+}
+
+.side-cuts {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 50px;
+}
+
+.marginLimite{
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.side-cuts .cuts-left {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    width: 40%;
+    justify-content: space-between;
+    height: 100%;
+    div{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+}
+
+
+.side-cuts .cuts-right {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+

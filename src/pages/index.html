@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Productivity</title>
+		<script src="../scripts/vendors/CSInterface.js"></script>
+		<script src="../scripts/components/loading.js"></script>
+		<script src="../scripts/components/collaps.js"></script>
+		<script type="module" src="../scripts/main.js"></script>
+		<link rel="stylesheet" href="../styles/main.css">
+		<link rel="stylesheet" href="../styles/components/notification.css">
+	<body>
+		<div id="loading-screen">
+
+		</div>
+		
+		<header id="header">
+			<div class="step-nav">
+				<a href="#"><div class="step current-step"><p>Création</p></div></a>
+				<a href="./montage.html"><div class="step"><p>Montage</p></div></a>
+				<a href="./export.html"><div class="step"><p>Exportation</p></div></a>
+			</div>
+		</header>
+
+		<section id="main">
+			<div class="side side-left">
+				<h2>Création des séquences rushs</h2>
+				<p class="desc">(Facultatif)</p>
+
+				<form action="">
+
+
+					<div class="option">
+
+						<h3>Option</h3>
+	
+	
+						<div class="option-content">
+							<label for="OptionAudio"><p>Création de fichiers audio</p>
+								<input type="checkbox" name="OptionAudio" id="OptionAudio" class="checkbox">
+								<div class="checkmark" id="checkmarksOptionAudio"></div>
+							</label>
+						</div>
+	
+						
+					</div>	
+
+					
+
+					
+					<button type="button" class="button-blue" id="STEP1_EXECUTE">Exécuter</button>
+
+				</form>
+
+			</div>
+
+
+			<div class="side side-right">
+
+				<div class="block-collaps">
+					<div class="box-collaps selectedSequence">
+						<p>Format</p>
+						<select name="formatSelection" id="formatSelection" class="box">
+							<option value="selectedFormatPhone">9:16 (Phone)</option>
+							<option value="selectedFormatDesktop">16:9 (Desktop)</option>
+						</select>
+					</div>
+				</div>
+
+				
+
+				<div class="block-collaps OptionAudioCollaps">
+					<div class="box-collaps">
+						<p>Importation de fichiers audio améliorée</p>
+						<button class="collapsible"><img src="../../assets/images/arrow.png" alt=""></button>
+					</div>
+					<div class="content">
+						<p class="desc">Détecter les fichiers wav que donne Adobe Podcast.
+						<div class="deep-content">
+							<form action="">
+								<label for="suffixAudio">
+									<p>Préfixe/suffixe utilisés</p>
+									<input type="text" name="suffixAudio" class="box" id="SuffixAudio" placeholder="Upgrade_">
+								</label>
+							</form>
+							
+						</div>
+					</div>
+				</div>
+				
+				<button type="button" class="button-blue" id="workflow">Créer les chutiers (nécessaires)</button>
+			</div>
+		</section>
+
+	</body>
+</html>

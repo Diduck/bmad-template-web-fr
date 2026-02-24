@@ -1,0 +1,72 @@
+.broll-suggestion-bloc{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+}
+
+.broll-suggestion-bloc .name{
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+}
+
+.broll-suggestion-bloc .analyse{
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+.broll-suggestion-bloc .analyse div{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+}
+
+
+.broll-suggestion-bloc .analyse .desc{
+    margin: 0;
+    font-size: 16px;
+}
+
+
+.broll-suggestion-bloc .suggestion-video{
+    display: flex;
+    flex-direction: row;
+    gap: 30px;
+    width: 100%;
+    justify-content: space-between;
+}
+
+.broll-suggestion-bloc .banner-button{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 20px;
+}
+
+.broll-suggestion-bloc .banner-button img{
+    width: 100%;
+    height: auto;
+}
+
+.broll-suggestion-bloc .controle{
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 50px;
+}
+
+.broll-suggestion-bloc .controle button{
+    width: 200px;
+}
+

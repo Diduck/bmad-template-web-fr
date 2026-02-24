@@ -1,0 +1,88 @@
+/* Color Picker Component Styles */
+
+/* Template selection container with color picker */
+.template-selection-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+/* Color picker square */
+.color-picker-square {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    background-color: #ff4949ff;
+    padding: 0;
+    font-size: 0;
+    outline: none;
+    color: transparent;
+    text-indent: -9999px;
+    caret-color: transparent;
+}
+
+.color-picker-square:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: scale(1.05);
+}
+
+.color-picker-square:active {
+    transform: scale(0.95);
+}
+
+.color-picker-square:focus {
+    border-color: #4a9eff;
+}
+
+/* Make the select take remaining space */
+.template-selection-container select {
+    flex: 1;
+}
+
+/* Hide Coloris field wrapper */
+.clr-field {
+    display: inline-block !important;
+    position: relative !important;
+}
+
+.clr-field button {
+    display: none !important;
+}
+
+/* Reset button */
+.color-reset-button {
+    padding: 8px 16px;
+    background: transparent;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.color-reset-button:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.color-reset-button:active {
+    transform: scale(0.95);
+}
+
+/* Coloris library customization */
+.clr-picker {
+    border-radius: 8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+.clr-picker.clr-dark {
+    background: #2a2a2a !important;
+}

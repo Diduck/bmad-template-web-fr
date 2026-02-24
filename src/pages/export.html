@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Productivity</title>
+		<script src="../scripts/vendors/CSInterface.js"></script>
+		<script src="../scripts/components/loading.js"></script>
+		<script src="../scripts/components/collaps.js"></script>
+		<script type="module" src="../scripts/main.js"></script>
+		<link rel="stylesheet" href="../styles/main.css">
+		<link rel="stylesheet" href="../styles/pages/montage.css">
+		<link rel="stylesheet" href="../styles/components/notification.css">
+	<body>
+		<div id="loading-screen">
+
+		</div>
+		
+		<header>
+			<div class="step-nav">
+				<a href="./index.html"><div class="step"><p>Création</p></div></a>
+				<a href="./montage.html"><div class="step"><p>Montage</p></div></a>
+				<a href="#"><div class="step current-step"><p>Exportation</p></div></a>
+			</div>
+		</header>
+
+		<section id="main">
+			<div class="side side-left">
+				<h2>Assemblage - Exportation</h2>
+				<p class="desc">(Facultatif)</p>
+
+				<form action="">
+
+					<div class="option">
+
+						<h3>Option</h3>
+	
+						<div class="option-content">
+							<label for="OptionformatPhone"><p>9:16</p>
+								<input type="checkbox" name="OptionformatPhone" id="OptionformatPhone" class="checkbox">
+								<div class="checkmark"></div>
+							</label>
+						</div>
+	
+						<div class="option-content">
+							<label for="OptionformatCarre"><p>1:1</p>
+								<input type="checkbox" name="OptionformatCarre" id="OptionformatCarre" class="checkbox">
+								<div class="checkmark"></div>
+							</label>
+						</div>
+
+						<div class="option-content">
+							<label for="OptionformatHorizontal"><p>16:9</p>
+								<input type="checkbox" name="OptionformatHorizontal" id="OptionformatHorizontal" class="checkbox">
+								<div class="checkmark"></div>
+							</label>
+						</div>
+	
+						
+					</div>	
+					
+					<button type="button" class="button-blue" id="AssemblyButton">Exécuter</button>
+
+				</form>
+
+			</div>
+
+
+
+			<!-- <div class="side side-right">
+
+				<div class="block-collaps OptionNewVersionCollaps">
+					<div class="box-collaps">
+						<p>Versions</p>
+						<button class="collapsible"><img src="../../assets/images/arrow.png" alt=""></button>
+					</div>
+					<div class="content">
+						<p class="desc">Permet de ne pas supprimer les anciennes versions de 9:16 et 1:1 après une nouvelle tentative</p>
+						<div class="deep-content">
+							<form action="" class="form-b-roll">
+								<label for="NewVersion">
+									<p>Ma version :</p>
+									<input type="text" name="NewVersion" class="box" placeholder="V1" id="NewVersion">
+								</label>
+							</form>
+						</div>
+					</div>
+				</div> -->
+			</div>
+		</section>
+
+	</body>
+</html>

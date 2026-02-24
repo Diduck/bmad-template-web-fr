@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Productivity</title>
+    <script src="../scripts/vendors/CSInterface.js"></script>
+    <script src="../scripts/components/loading.js"></script>
+    <script src="../scripts/components/collaps.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.js"></script>
+    <script type="module" src="../scripts/main.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.css"/>
+    <link rel="stylesheet" href="../styles/main.css" />
+    <link rel="stylesheet" href="../styles/pages/montage.css" />
+    <link rel="stylesheet" href="../styles/components/broll.css" />
+    <link rel="stylesheet" href="../styles/components/wave.css" />
+    <link rel="stylesheet" href="../styles/components/loader.css" />
+    <link rel="stylesheet" href="../styles/components/notification.css" />
+    <link rel="stylesheet" href="../styles/components/colorPicker.css" />
+  </head>
+  <body>
+    <div id="loading-screen">
+
+		</div>
+		
+    <header>
+      <div class="step-nav">
+        <a href="./index.html"
+          ><div class="step"><p>Création</p></div></a
+        >
+        <a href="#"
+          ><div class="step current-step"><p>Montage</p></div></a
+        >
+        <a href="./export.html"
+          ><div class="step"><p>Exportation</p></div></a
+        >
+      </div>
+    </header>
+
+    <section id="main">
+      <div class="side side-left">
+        <h2>Montage vidéo</h2>
+        <p class="desc"></p>
+
+        <form action="">
+          <div class="option">
+            <h3>Options</h3>
+
+            <div class="option-content">
+              <label for="OptionCut"
+                ><p>Auto-cuts</p>
+                <input
+                  type="checkbox"
+                  name="OptionCut"
+                  id="OptionCut"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
+
+            <div class="option-content">
+              <label for="OptionZoom"
+                ><p>Ajout d’effets de zoom</p>
+                <input
+                  type="checkbox"
+                  name="OptionZoom"
+                  id="OptionZoom"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
+
+            <div class="option-content">
+              <label for="OptionSubtitles"
+                ><p>Ajout de sous-titres</p>
+                <input
+                  type="checkbox"
+                  name="OptionSubtitles"
+                  id="OptionSubtitles"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
+            <div class="option-content">
+              <label for="Optiontitles"
+                ><p>Ajout de titres</p>
+                <input
+                  type="checkbox"
+                  name="Optiontitles"
+                  id="Optiontitles"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
+
+            <div class="option-content">
+              <label for="OptionBroll"
+                ><p>Ajout de B-rolls</p>
+                <input
+                  type="checkbox"
+                  name="OptionBroll"
+                  id="OptionBroll"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
+          </div>
+
+          <button type="button" class="button-blue" id="STEP2_EXECUTE">
+            Exécuter
+          </button>
+
+          <div class="space"></div>
+
+          <div class="b-roll-content">
+            <p>Ajout de B-roll</p>
+            <p class="desc brolldesc">Exécuter seulement les Brolls</p>
+
+            <button class="button-blue createBroll" id="createBrolls">
+              Création B-rolls
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="side side-right">
+        <div class="block-collaps OptionBroll">
+          <div class="box-collaps">
+            <p>Options B-rolls</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content">
+            <p class="desc">API OpenAI nécessaires pour les B-rolls.</p>
+            <div class="deep-content">
+              <form action="" class="form-b-roll">
+                <label for="tokenOpenAI">
+                  <p>Token OpenAI</p>
+                  <input
+                    type="text"
+                    name="tokenOpenAI"
+                    class="box"
+                    id="TokenOpenAI"
+                  />
+                </label>
+              </form>
+
+              <div class="bar-horizontal" style="display: none"></div>
+
+              <div class="broll-suggestion-bloc" style="display: none">
+                <div class="name">
+                  <p>B-Rolls - Ad 1</p>
+                  <p class="desc">
+                    "Stop" permet de stopper la recherche de B-roll.
+                  </p>
+                </div>
+                <div class="analyse">
+                  <div>
+                    <p>Phrase analysé :</p>
+                    <p class="desc">“votre berger australien est”</p>
+                  </div>
+                  <p class="timecode">00:10:25:63</p>
+                </div>
+                <h3>Proposition :</h3>
+
+                <div class="suggestion-video">
+                  <div class="banner-button">
+                    <img src="../../assets/images/banner-video.png" alt="" />
+                    <button class="button-blue">Accepter</button>
+                  </div>
+                  <div class="banner-button">
+                    <img src="../../assets/images/banner-video.png" alt="" />
+                    <button class="button-blue">Accepter</button>
+                  </div>
+                  <div class="banner-button">
+                    <img src="../../assets/images/banner-video.png" alt="" />
+                    <button class="button-blue">Accepter</button>
+                  </div>
+                </div>
+
+                <div class="controle">
+                  <button class="button-black">Stop</button>
+                  <button class="button-red">Rejeter</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps PresetStyle OptionSubtitlesCollaps">
+          <div class="box-collaps">
+            <p>Options Sous-titres</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content">
+            <p class="desc">Pour importer tous les styles des sous-titres</p>
+            <div class="deep-content">
+              <form action="" class="form-b-roll">
+                <label
+                  for="PresetStyle"
+                  style="
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 20px;
+                  "
+                >
+                  <p>Chemin d'accès vers : '.prtextstyle'</p>
+                  <input
+                    type="text"
+                    name="PresetStyle"
+                    class="box"
+                    id="OptionPresetStyle"
+                  />
+                </label>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps OptionCutCollaps">
+          <div class="box-collaps">
+            <p>Options Auto-Cuts</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content">
+            <p class="desc">Plus "Limite" est grand, moins la vidéo sera cut</p>
+            <div class="deep-content">
+              <div class="side-cuts">
+                <div class="marginLimite">
+                  <label for="margeCuts">
+                    <p>Marge</p>
+                    <input
+                      type="number"
+                      name="margeCuts"
+                      class="box"
+                      placeholder="0.015 (secondes)"
+                      id="MargeCuts"
+                    />
+                  </label>
+                  <label for="limiteCuts">
+                    <p>Limite</p>
+                    <input
+                      type="number"
+                      name="limiteCuts"
+                      class="box"
+                      placeholder="-60 (db)"
+                      id="LimiteCuts"
+                    />
+                  </label>
+                </div>
+
+                <div class="wavContent" id="wavContent"></div>
+                <div class="cuts-left">
+                  <button class="button-blue" id="AnalyseCut">Analyser</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps OptiontitlesCollaps">
+          <div class="box-collaps">
+            <p>Options Titres</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content">
+            <p class="desc">Choisis un modèle</p>
+            <div class="deep-content">
+              <div class="template-selection-container">
+                <input
+                  type="text"
+                  id="TitleColorPicker"
+                  class="color-picker-square"
+                  data-coloris
+                  value="#ff4949ff"
+                />
+                <select
+                  name="TemplateSelection"
+                  id="TemplateSelection"
+                  class="box"
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                </select>
+              </div>
+
+              <div class="imgTemplate"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps">
+          <div class="box-collaps selectedSequence">
+            <p>Sélection</p>
+            <select name="sequenceSelection" id="sequenceSelection" class="box">
+              <option value="selectedSequence">Séquence sélectionnée</option>
+              <option value="allSequences">Toutes les séquences</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

@@ -13,9 +13,24 @@ Desktop.ini
 *.swp
 *.swo
 
-# BMAD Output (artifacts are project-specific, not template)
-# Uncomment the line below if you want to track your artifacts
-# _bmad-output/
+# BMAD Output
+_bmad-output/
+
+# Binaries
+bin/
+
+# Backups
+backup/
+
+# CEP Debug
+.debug
+config/.debug
+
+# Windows artifacts
+nul
+
+# Claude local settings
+.claude/settings.local.json
 
 # Environment
 .env
