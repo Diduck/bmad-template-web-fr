@@ -10,10 +10,9 @@ import { FILE_EXTENSIONS, TICKS } from './constants.js';
  * @returns {string} Filename without extension
  */
 export function removeExtension(name) {
-    for (const ext of FILE_EXTENSIONS.VIDEO.concat(FILE_EXTENSIONS.AUDIO)) {
-        if (name.indexOf(ext) !== -1) {
-            return name.substring(0, name.lastIndexOf("."));
-        }
+    const lastDot = name.lastIndexOf(".");
+    if (lastDot > 0) {
+        return name.substring(0, lastDot);
     }
     return name;
 }
@@ -114,14 +113,37 @@ export function safePayload(data) {
 }
 
 /**
- * Normalize JSON response from OpenAI (extract main array)
- * @param {string} raw - Raw response
- * @returns {string} Normalized JSON
+ * Normalize JSON response from OpenAI/Claude (extract main array)
+ * Strips markdown code blocks and extracts [[ ... ]] pattern
+ * @param {string} raw - Raw response (max 100KB)
+ * @returns {string|null} Normalized JSON string, or null if invalid
+ * @throws {Error} If response is too large
  */
 export function normalizeTitlesJsonBatch(raw) {
-    if (!raw) return raw;
-    const match = raw.match(/\[\s*\[[\s\S]*\]\s*\]/);
-    return match ? match[0] : raw;
+    if (!raw) return null;
+
+    // Guard contre DoS : limite à 100KB
+    if (raw.length > 100000) {
+        throw new Error('Response too large (>100KB)');
+    }
+
+    // Nettoyer les markdown code blocks (ouverture et fermeture ensemble)
+    // Pattern: ```json (optionnel) + newline + contenu + newline + ```
+    let cleaned = raw
+        .replace(/^```(?:json)?\s*\n?/gm, '')  // Supprimer ouverture
+        .replace(/\n?```\s*$/gm, '')            // Supprimer fermeture
+        .trim();
+
+    // Extraire le pattern [[ ... ]] (lazy match, ancré)
+    // Utilise lazy quantifier pour éviter greedy matching sur plusieurs arrays
+    const match = cleaned.match(/^\s*\[\s*\[[\s\S]*?\]\s*\]\s*$/);
+
+    if (!match) {
+        console.warn('[normalizeTitlesJsonBatch] No [[ ... ]] pattern found in response:', cleaned.slice(0, 200));
+        return null;
+    }
+
+    return match[0];
 }
 
 /**
@@ -229,4 +251,73 @@ export function formatTime(seconds) {
  */
 export function generateId(length = 8) {
     return Math.random().toString(36).substring(2, 2 + length);
+}
+
+/**
+ * Extract JSON object from raw AI response (strip markdown, fix trailing commas)
+ * @param {string} raw - Raw response text
+ * @returns {Object} Parsed JSON object
+ */
+export function extractJsonFromRaw(raw) {
+    try {
+        return JSON.parse(raw);
+    } catch (e) { /* continue */ }
+
+    let cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+        throw new Error('Pas de JSON valide trouvé dans la réponse');
+    }
+
+    cleaned = jsonMatch[0];
+    cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+
+    return JSON.parse(cleaned);
+}
+
+/**
+ * Gère les erreurs d'authentification Claude CLI de manière centralisée.
+ * Si l'erreur est une ClaudeAuthError, affiche le modal de reconnexion et retourne une Promise
+ * qui se résout quand l'utilisateur a réessayé.
+ *
+ * @param {Error} error - Erreur à vérifier
+ * @param {Function} retryCallback - Fonction à appeler quand l'utilisateur veut réessayer
+ * @returns {Promise<boolean>} true si c'était une erreur d'auth et qu'on doit réessayer, false sinon
+ */
+export async function handleClaudeAuthError(error, retryCallback) {
+    // Vérifier si c'est une erreur d'auth Claude
+    if (error && (error.isAuthError || error.name === 'ClaudeAuthError')) {
+        console.log('[handleClaudeAuthError] Erreur d\'auth détectée, affichage du modal');
+
+        return new Promise((resolve) => {
+            // Afficher le modal avec le callback de retry
+            if (window.claudeAuthModal) {
+                window.claudeAuthModal.show(async () => {
+                    console.log('[handleClaudeAuthError] Utilisateur a cliqué sur Réessayer');
+                    if (retryCallback) {
+                        try {
+                            await retryCallback();
+                            resolve(true);
+                        } catch (retryError) {
+                            console.error('[handleClaudeAuthError] Erreur lors du retry:', retryError);
+                            // Si le retry échoue aussi avec une erreur d'auth, re-afficher le modal
+                            if (retryError && (retryError.isAuthError || retryError.name === 'ClaudeAuthError')) {
+                                return handleClaudeAuthError(retryError, retryCallback);
+                            }
+                            resolve(false);
+                        }
+                    } else {
+                        resolve(true);
+                    }
+                });
+            } else {
+                console.error('[handleClaudeAuthError] window.claudeAuthModal n\'est pas disponible');
+                resolve(false);
+            }
+        });
+    }
+
+    // Pas une erreur d'auth, propager
+    return false;
 }
