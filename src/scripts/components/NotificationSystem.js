@@ -28,11 +28,12 @@ class NotificationSystem {
      * @param {string} message - Message to display
      * @param {string} type - Notification type (success, warning, error)
      * @param {number} duration - Duration in ms
+     * @param {{ persistent?: boolean }} options - Options (persistent disables auto-dismiss)
      * @returns {number} Notification ID
      */
-    show(message, type = 'success', duration = NOTIFICATIONS.DEFAULT_DURATION_MS) {
+    show(message, type = 'success', duration = NOTIFICATIONS.DEFAULT_DURATION_MS, options = {}) {
         const id = this.idCounter++;
-        const notification = this.createNotification(id, message, type);
+        const notification = this.createNotification(id, message, type, options.persistent);
 
         this.container.insertBefore(notification, this.container.firstChild);
         this.notifications.unshift({ id, element: notification });
@@ -41,11 +42,13 @@ class NotificationSystem {
             notification.classList.add('show');
         }, 10);
 
-        const timer = setTimeout(() => {
-            this.hide(id);
-        }, duration);
+        if (!options.persistent) {
+            const timer = setTimeout(() => {
+                this.hide(id);
+            }, duration);
 
-        notification.dataset.timer = timer;
+            notification.dataset.timer = timer;
+        }
 
         return id;
     }
@@ -55,33 +58,49 @@ class NotificationSystem {
      * @param {number} id - Notification ID
      * @param {string} message - Message
      * @param {string} type - Type
+     * @param {boolean} persistent - If true, no progress bar, shows close button
      * @returns {HTMLElement} Notification element
      */
-    createNotification(id, message, type) {
+    createNotification(id, message, type, persistent = false) {
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.dataset.id = id;
+
+        if (persistent) {
+            notification.classList.add('persistent');
+        }
 
         const content = document.createElement('div');
         content.className = 'notification-content';
         content.textContent = message;
 
-        const progressBar = document.createElement('div');
-        progressBar.className = 'progress-bar';
-
         notification.appendChild(content);
-        notification.appendChild(progressBar);
+
+        if (persistent) {
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'notification-close';
+            closeBtn.textContent = '\u00D7';
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.hide(id);
+            });
+            notification.appendChild(closeBtn);
+        } else {
+            const progressBar = document.createElement('div');
+            progressBar.className = 'progress-bar';
+            notification.appendChild(progressBar);
+
+            notification.addEventListener('mouseenter', () => {
+                progressBar.style.animationPlayState = 'paused';
+            });
+
+            notification.addEventListener('mouseleave', () => {
+                progressBar.style.animationPlayState = 'running';
+            });
+        }
 
         notification.addEventListener('click', () => {
             this.hide(id);
-        });
-
-        notification.addEventListener('mouseenter', () => {
-            progressBar.style.animationPlayState = 'paused';
-        });
-
-        notification.addEventListener('mouseleave', () => {
-            progressBar.style.animationPlayState = 'running';
         });
 
         return notification;
@@ -137,21 +156,25 @@ class NotificationSystem {
      * Show warning notification
      * @param {string} message - Message
      * @param {number} duration - Duration in ms
+     * @returns {number} Notification ID
      */
     warning(message, duration = NOTIFICATIONS.WARNING_DURATION_MS) {
         if (window.ProductivityLoading) {
             window.ProductivityLoading.setMessage(message);
         }
+        // No HUD popup for warnings — only update loading screen message
+        return -1;
     }
 
     /**
-     * Show error notification
+     * Show error notification (persistent by default — no auto-dismiss)
      * @param {string} message - Message
-     * @param {number} duration - Duration in ms
+     * @param {number} duration - Duration in ms (used as fallback if not persistent)
+     * @param {boolean} persistent - If true, notification stays until manual dismiss
      * @returns {number} Notification ID
      */
-    error(message, duration = NOTIFICATIONS.ERROR_DURATION_MS) {
-        return this.show(message, 'error', duration);
+    error(message, duration = NOTIFICATIONS.ERROR_DURATION_MS, persistent = true) {
+        return this.show(message, 'error', duration, { persistent });
     }
 }
 

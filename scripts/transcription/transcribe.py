@@ -7,14 +7,36 @@ import sys
 
 audio_path = sys.argv[1]
 goal = sys.argv[2]  # "BROLL" ou "SRT"
-model = whisper.load_model("large-v3")
+try:
+    char_limit = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
+except (ValueError, TypeError):
+    char_limit = None
+
+model_name = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "large-v3"
+output_dir = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
+
+model = whisper.load_model(model_name)
+
+if output_dir:
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = os.path.splitext(os.path.basename(audio_path))[0]
+    if goal == "SRT":
+        output_json = os.path.join(output_dir, base_name + "SRT.json")
+    else:
+        output_json = os.path.join(output_dir, base_name + ".json")
+else:
+    if goal == "SRT":
+        output_json = os.path.splitext(audio_path)[0] + "SRT.json"
+    else:
+        output_json = os.path.splitext(audio_path)[0] + ".json"
 
 if goal == "SRT":
-    output_json = os.path.splitext(audio_path)[0] + "SRT.json"
-    charnbr= 19 #19
+    charnbr = char_limit if char_limit else 19
 else:
-    output_json = os.path.splitext(audio_path)[0] + ".json"
-    charnbr= 40 #2s
+    charnbr = char_limit if char_limit else 40
+
+# Garde-fou : clamping entre 10 et 80
+charnbr = max(10, min(80, charnbr))
 
 # 🔹 Signes spéciaux
 PERCENT_SIGNS = {"%", "％", "000"}   # ASCII et pleine largeur

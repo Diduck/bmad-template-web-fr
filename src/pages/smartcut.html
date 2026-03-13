@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Productivity - Smart Cut</title>
+    <script src="../scripts/vendors/CSInterface.js"></script>
+    <script src="../scripts/components/collaps.js"></script>
+    <script type="module" src="../scripts/pages/smartcut.js"></script>
+    <link rel="stylesheet" href="../styles/main.css">
+    <link rel="stylesheet" href="../styles/pages/smartcut.css">
+    <link rel="stylesheet" href="../styles/components/intention-card.css">
+    <link rel="stylesheet" href="../styles/components/sequence-selector.css">
+    <link rel="stylesheet" href="../styles/components/notification.css">
+    <link rel="stylesheet" href="../styles/components/short-card.css">
+    <link rel="stylesheet" href="../styles/components/streaming-zone.css">
+    <link rel="stylesheet" href="../styles/components/smart-cut-progress.css">
+    <link rel="stylesheet" href="../styles/components/action-bar.css">
+    <link rel="stylesheet" href="../styles/components/status-bar.css">
+  </head>
+  <body>
+    <div id="loading-screen"></div>
+    <header>
+      <div class="step-nav">
+        <a href="./index.html"><div class="step"><p>Création</p></div></a>
+        <a href="#"><div class="step current-step"><p>Smart Cut</p></div></a>
+        <a href="./montage.html"><div class="step"><p>Montage</p></div></a>
+        <a href="./propriete.html"><div class="step"><p>Propriété</p></div></a>
+        <a href="./export.html"><div class="step"><p>Exportation</p></div></a>
+      </div>
+      <div class="header-actions">
+        <div class="header-icon-wrapper" id="seqSelectorToggle">
+          <button class="header-icon" aria-label="Sélection des séquences"
+                  aria-expanded="false" aria-controls="seqSelectorPopup">
+            <img src="../../assets/icons/sequences.svg" alt="">
+          </button>
+          <div id="seqSelectorPopup" class="seq-selector-popup" style="display: none;">
+          </div>
+        </div>
+        <a href="./settings.html" class="header-icon" aria-label="Paramètres">
+          <img src="../../assets/icons/settings.svg" alt="">
+        </a>
+      </div>
+    </header>
+
+    <!-- Phase Config (visible par défaut) -->
+    <section id="PhaseConfig" class="phase-config" style="display: flex;">
+      <div class="smartcut-left">
+        <h2>Smart Cut</h2>
+        <p class="desc">Choisissez une intention d'analyse</p>
+
+        <div class="intention-grid" role="radiogroup" aria-label="Choix d'intention">
+        </div>
+
+        <button type="button" class="button-blue" id="SmartCutLaunch" disabled aria-disabled="true">
+          Lancer
+        </button>
+      </div>
+
+      <div class="smartcut-right">
+        <div class="block-collaps">
+          <div class="box-collaps">
+            <p>Options avancées</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="">
+            </button>
+          </div>
+          <div class="content">
+            <div class="deep-content">
+              <label>Prompt personnalisé</label>
+              <p class="desc">Ajouté au template sélectionné (ou utilisé seul si aucune carte)</p>
+              <textarea id="SmartCutCustomPrompt" class="box custom-prompt-textarea"
+                        placeholder="Instructions supplémentaires pour l'analyse..."
+                        rows="3"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Phase Streaming (cachée) -->
+    <section id="PhaseStreaming" class="phase-streaming" style="display: none;">
+      <div class="smartcut-left">
+        <h2 id="StreamingIntentionLabel">Analyse en cours...</h2>
+        <div class="smart-cut-progress" id="SmartCutProgress" role="status"
+             aria-label="Analyse en cours">
+          <div class="smart-cut-progress__bar"></div>
+        </div>
+        <p class="smart-cut-progress__counter" id="SmartCutCounter">0 segments identifies...</p>
+        <button type="button" class="button-red" id="SmartCutStop">Arreter</button>
+      </div>
+      <div class="smartcut-right">
+        <div class="streaming-zone" id="StreamingZone" role="feed" aria-live="polite">
+        </div>
+      </div>
+    </section>
+
+    <!-- Phase Review (cachée) -->
+    <section id="PhaseReview" class="phase-review" style="display: none;">
+      <div class="smartcut-left">
+        <h2>Resultats</h2>
+        <p class="review-summary" id="ReviewSummary">0 segments identifies</p>
+      </div>
+      <div class="smartcut-right">
+        <div class="streaming-zone" id="ReviewZone" role="feed">
+        </div>
+        <div class="action-bar" id="ActionBar">
+          <button type="button" class="button-blue" id="SmartCutValidate" disabled>Valider (0 shorts)</button>
+          <button type="button" class="button-red btn-sm" id="SmartCutCancelAll">Annuler tout</button>
+          <button type="button" class="button-black btn-sm" id="SmartCutRelaunch">Relancer</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- UndoBanner — persistant apres creation, visible cross-phase -->
+    <div id="UndoBanner" class="undo-banner" style="display: none;" role="alert" aria-live="assertive">
+      <span class="undo-banner__message">Shorts crees avec succes</span>
+      <button class="button-red btn-sm" id="UndoButton" aria-label="Annuler la creation des shorts">Annuler la creation</button>
+    </div>
+
+    <div id="statusBar" class="status-bar">
+      <span id="statusBarText" class="status-bar__text">1 séquence active</span>
+    </div>
+  </body>
+</html>

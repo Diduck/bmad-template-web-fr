@@ -1,0 +1,1 @@
+Identifie les moments les plus percutants, engageants et partageables. Cherche : revelations surprenantes, emotions fortes, debats controverses, anecdotes captivantes, moments droles, declarations audacieuses. Privilege les segments qui captent attention des les 3 premieres secondes.

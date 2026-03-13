@@ -1,185 +1,308 @@
 # Architecture - Productivity Extension
 
-> Documentation générée le 2026-02-24 | Scan exhaustif
+> Scan exhaustif | Mise à jour : 2026-03-05
 
 ---
 
-## 1. Résumé exécutif
+## 1. Résumé architectural
 
-Productivity est une extension Adobe CEP pour Premiere Pro architecturée en **4 couches** : UI (HTML/CSS), Application (JavaScript ES6), Bridge (PremiereAsync) et Scripting hôte (ExtendScript/JSX). L'extension intègre 3 services externes (OpenAI, Python/Whisper, FFmpeg) pour automatiser la post-production vidéo.
+Extension Adobe CEP monolithique pour Premiere Pro, organisée en **4 couches** avec 2 pipelines IA distinctes (OpenAI REST+SSE et Claude CLI bat+vbs+poll).
+
+**Pattern principal :** Architecture multi-couches avec bridge asynchrone CEP.
 
 ---
 
-## 2. Pattern architectural
-
-**Type :** Extension CEP multi-couches avec bridge asynchrone
+## 2. Diagramme des couches
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              COUCHE UI (HTML/CSS)                    │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │
-│  │auth.html │→│index.html│→│montage   │→│export  │ │
-│  │  (OTP)   │ │ (Step 1) │ │  (Step 2)│ │(Step 3)│ │
-│  └──────────┘ └──────────┘ └──────────┘ └────────┘ │
-│  Components: NotificationSystem, LoadingScreen,     │
-│  ColorPicker, Component, Collapsible                │
-└────────────────────────┬────────────────────────────┘
-                         │ DOM Events
-┌────────────────────────▼────────────────────────────┐
-│           COUCHE APPLICATION (JavaScript ES6)        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │ main.js (orchestrateur)                       │   │
-│  │  ├── handleCreateWorkflow()                   │   │
-│  │  ├── handleStep1Execute()                     │   │
-│  │  └── handleStep2Execute() ← 7 phases         │   │
-│  └──────────────────────────────────────────────┘   │
-│  ┌─────────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │SubtitlesSvc │ │TitlesSvc │ │   BrollsSvc      │ │
-│  │(transcribe) │ │(AI gen)  │ │(AI analyze+mark) │ │
-│  └─────────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌────────────┐ ┌──────────────────┐  │
-│  │OpenAI    │ │SetupManager│ │   ErrorHandler   │  │
-│  │Client    │ │(deps check)│ │   (centralisé)   │  │
-│  └──────────┘ └────────────┘ └──────────────────┘  │
-└────────────────────────┬────────────────────────────┘
-                         │ CSInterface.evalScript()
-┌────────────────────────▼────────────────────────────┐
-│           BRIDGE (PremiereAsync)                     │
-│  Promise wrappers + timeout 60s + escape chars      │
-│  ~25 méthodes couvrant toutes les opérations        │
-└────────────────────────┬────────────────────────────┘
-                         │ ExtendScript API
-┌────────────────────────▼────────────────────────────┐
-│           COUCHE SCRIPTING HÔTE (Premiere.jsx)       │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ API Premiere Pro directe                     │    │
-│  │  ├── Séquences, clips, pistes, effets       │    │
-│  │  ├── Bins (navigation récursive)            │    │
-│  │  ├── Import/export (MOGRT, SRT, WAV)        │    │
-│  │  └── Events (CSXSEvent → JS)                │    │
-│  └─────────────────────────────────────────────┘    │
-│  ┌───────────┐ ┌───────────┐ ┌─────────────────┐   │
-│  │ AME       │ │ FFmpeg    │ │ Python/Whisper  │   │
-│  │ (export)  │ │ (analyse) │ │ (transcription) │   │
-│  └───────────┘ └───────────┘ └─────────────────┘   │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  COUCHE 1 — UI (HTML + CSS)                                  │
+│  auth.html → index.html → smartcut.html → montage.html       │
+│  → propriete.html → settings.html → export.html              │
+│  + 17 fichiers CSS (main + components/ + pages/)             │
+├──────────────────────────────────────────────────────────────┤
+│  COUCHE 2 — APPLICATION (JavaScript ES6)                     │
+│  ┌─────────────────┐  ┌──────────────────────────────────┐  │
+│  │  API Clients     │  │  Services métier                 │  │
+│  │  openai.js       │  │  titles.js    subtitles.js       │  │
+│  │  claude.js       │  │  brolls.js    smartcut.js        │  │
+│  │                  │  │  motiondesign.js  context.js     │  │
+│  │                  │  │  setup.js     propriete.js       │  │
+│  └─────────────────┘  └──────────────────────────────────┘  │
+│  ┌─────────────────┐  ┌──────────────────────────────────┐  │
+│  │  Composants UI   │  │  Utilitaires                     │  │
+│  │  Component.js    │  │  constants.js   helpers.js       │  │
+│  │  ColorPicker.js  │  │  errorHandler.js storage.js      │  │
+│  │  LoadingScreen   │  │  templateLoader.js               │  │
+│  │  Notifications   │  │  verify.js                       │  │
+│  │  SeqSelector     │  │                                  │  │
+│  └─────────────────┘  └──────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────┤
+│  COUCHE 3 — BRIDGE                                           │
+│  CSInterface.js (SDK Adobe) + PremiereAsync (evalScript)    │
+│  + TemplateLoader (XHR sync → .md prompts)                  │
+├──────────────────────────────────────────────────────────────┤
+│  COUCHE 4 — SCRIPTING HÔTE (ExtendScript ES3)               │
+│  Premiere.jsx (~3900 lignes, ~60 fonctions publiques)       │
+│  + FFmpeg (bin/ffmpeg.exe) + Python/Whisper (bat+vbs)       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Stack technologique détaillée
+## 3. Stack technique détaillée
 
-| Couche | Technologie | Version/Détails | Justification |
-|--------|-------------|----------------|---------------|
-| UI | HTML5 | 4 pages | Panneau CEP standard |
-| UI | CSS3 | Design system custom | Thème sombre Adobe |
-| UI | Coloris | CDN | Sélecteur couleur avancé |
-| UI | Axios | CDN | Client HTTP (futur usage) |
-| App | JavaScript ES6 | Vanilla, modules | Pas de framework pour légèreté |
-| App | CSInterface.js | CEP SDK v6.0 | Communication avec Premiere |
-| Bridge | PremiereAsync | Custom | Wrappers Promise + timeout |
-| Hôte | ExtendScript (JSX) | ES3 étendu | API native Premiere Pro |
-| IA | OpenAI API | GPT-5-mini | Titres + B-rolls |
-| IA | Whisper | via Python | Transcription audio |
-| Audio | FFmpeg | Embarqué (bin/) | Analyse RMS silence |
-| Export | Adobe Media Encoder | Via ExtendScript | Export WAV/vidéo |
-
----
-
-## 4. Flux de données principal (Step 2)
-
-```
-Utilisateur clique "Exécuter" (Step 2)
-│
-▼ handleStep2Execute()
-│
-├── Phase 1: Génération des transcriptions
-│   ├── SubtitlesService.generateForFiles()
-│   │   ├── PremiereAsync → exportSequenceWavSilently() → AME → WAV
-│   │   └── PremiereAsync → runPythonTranscription() → Python/Whisper
-│   │       └── Sortie: {nom}.json (BROLL) ou {nom}SRT.json (SRT)
-│   │
-│   └── Si titres: TitlesService.generateForFiles()
-│       ├── Lecture SRT.json
-│       └── OpenAIClient.generateTitlesBatch() (lots de 100, streaming)
-│           └── Sortie: {nom}_titles.json
-│
-├── Phase 2: Analyse cuts (optionnel)
-│   ├── PremiereAsync → AnalyseCut() → FFmpeg (RMS)
-│   └── Affichage forme d'onde (wavContent)
-│
-├── Phase 3: Exécution cuts
-│   └── PremiereAsync → CutSecond() → QE (setInPoint/setOutPoint/extract)
-│
-├── Phase 4: Import sous-titres
-│   └── PremiereAsync → CreateSTR() → Import SRT + caption track
-│
-├── Phase 5: Import titres
-│   └── PremiereAsync → CreateTitles() → Import MOGRT + config texte/couleur
-│
-├── Phase 6: Création B-rolls
-│   ├── BrollsService → OpenAI (lots de 50)
-│   ├── Génération preview HTML (liens Envato)
-│   └── PremiereAsync → createMarkers() → Marqueurs timeline
-│
-└── Phase 7: Zoom (actuellement désactivé)
-```
+| Catégorie | Technologie | Version | Justification |
+|-----------|-----------|---------|---------------|
+| Hôte | Adobe Premiere Pro | v15.0-99.0 | Application cible |
+| Runtime CEP | CSXS | v6.0 | Framework d'extension Adobe |
+| UI | HTML5 + CSS3 | — | Vanilla, sans framework (légèreté) |
+| JS Frontend | Vanilla ES6 | — | Modules ES6 import/export |
+| JS Backend | ExtendScript | ES3 | Seul langage supporté par Premiere |
+| Modules | require.js (AMD) | — | Vendors uniquement (CSInterface) |
+| IA REST | OpenAI Responses API | — | Titres, B-rolls, Smart Cut, contexte |
+| IA CLI | Claude CLI | Sonnet | Motion design Lottie (2 prompts chaînés) |
+| Animation | lottie-web | 5.12.2 | Rendu SVG → Canvas → PNG frames |
+| Couleurs | Coloris | latest | Picker RGBA avec historique |
+| HTTP | Axios | latest | Requêtes (montage.html uniquement) |
+| Vidéo | FFmpeg | local | ProRes 4444 avec alpha, analyse RMS |
+| Transcription | openai-whisper | large-v3 | Word timestamps, custom replacements |
+| Auth | OTP + longpass | — | Backend PHP localhost |
+| Stockage | localStorage | — | Persistance formulaires, état pipeline |
 
 ---
 
-## 5. Gestion de l'état
+## 4. Patterns architecturaux clés
 
-### localStorage (persistance client)
+### 4.1 Duck Typing pour les clients IA
 
-L'extension utilise `Storage` (wrapper localStorage) pour persister :
+Les services acceptent un `aiClient` générique. `OpenAIClient` et `ClaudeClient` implémentent la même interface :
 
-| Catégorie | Clés | But |
-|-----------|------|-----|
-| **Options workflow** | OptionAudio, OptionCut, OptionZoom, OptionSubtitles, Optiontitles, OptionBroll | Checkboxes activées |
-| **Options export** | OptionformatPhone, OptionformatCarre, OptionformatHorizontal | Formats d'export |
-| **Configuration** | TokenOpenAI, SuffixAudio, MargeCuts, LimiteCuts | Paramètres utilisateur |
-| **UI** | sequenceSelection, formatSelection, TemplateSelection, OptionPresetStyle | Sélections dropdown |
-| **Couleur** | TitleColorPicker, colorPickerHistory | Couleur titre + historique |
-| **Auth** | longpass | Token de session |
-| **Setup** | setup_completed_v1 | Flag dépendances vérifiées |
+```
+aiClient.call(params)            → Promise<string>
+aiClient.generateTitles()        → Promise<Array>
+aiClient.generateTitlesBatch()   → Promise<Array>
+aiClient.analyzeBrolls()         → Promise<Array>
+aiClient.selectTitleWords()      → Promise<Array>
+aiClient.analyzeSmartCut()       → Promise<void> (streaming)
+```
 
-### Pattern Component
+Le choix du provider est fait dans `main.js` via `getAIClient()` selon le toggle AI_PROVIDER.
 
-Chaque `Component` :
-1. Se charge depuis `Storage.get(id, defaultValue)` à la construction
-2. Se synchronise avec le DOM (`input.value` ou `checkbox.checked`)
-3. Se sauvegarde via `Storage.set(id, value)` à chaque `setValue()`
-4. Toggle les sections collapsibles associées si c'est une Option
+### 4.2 Bridge asynchrone (PremiereAsync)
+
+Toutes les opérations Premiere passent par `PremiereAsync._evalWithTimeout()` :
+
+```
+JS (ES6) → PremiereAsync._evalWithTimeout('FunctionName("args")')
+    → CSInterface.evalScript('FunctionName("args")', callback)
+        → Premiere.jsx (ES3) exécute la fonction
+            → Retourne string (JSON ou valeur simple)
+    → Promise<string> résolue dans JS
+```
+
+**Timeout par défaut :** 60 secondes. Configurable par appel.
+**Escape de chemin :** `_escPath()` double les backslashes et échappe les guillemets.
+
+### 4.3 Pattern bat+vbs (processus externes)
+
+Pour Claude CLI, Python/Whisper et certaines commandes FFmpeg :
+
+```
+1. JS écrit le contenu du prompt → fichier temp (.txt)
+2. JS appelle JSX.runClaudeBackground(promptPath, outputPath)
+3. JSX écrit un .bat avec la commande + "echo done > .done"
+4. JSX écrit un .vbs qui lance le .bat en mode caché
+5. JSX exécute le .vbs via app.doScript()
+6. JS poll le .done file toutes les 500ms
+7. JS lit le output file quand terminé
+8. JS appelle JSX.cleanupClaudeFiles() pour nettoyer
+```
+
+**Anti-nesting :** `set "CLAUDECODE="` dans le .bat désactive la protection de Claude Code.
+**Kill orphelin :** `taskkill /F /IM claude.exe /T` sur timeout.
+
+### 4.4 Streaming SSE (OpenAI)
+
+```
+1. POST → fetch() avec body.stream = true
+2. response.body.getReader() → ReadableStream
+3. TextDecoder sur chunks buffered
+4. Ligne "data: {json}" → parse delta
+5. event.type === 'response.output_text.delta' → accumulation
+6. onDelta(accumulatedText) callback
+7. [DONE] → retourne fullText
+```
+
+### 4.5 Streaming NDJSON (Claude CLI)
+
+```
+1. Claude CLI écrit en mode --output-format stream-json --verbose
+2. Fichier output contient des lignes JSON (NDJSON)
+3. JS parse ligne par ligne via _parseStreamJson()
+4. Types d'événements : stream_event (delta), assistant (complete), result (done)
+5. Maintient processedUpTo pointer pour éviter le re-parsing
+6. Détection de stabilité : 20s sans nouveau contenu → exit
+```
+
+### 4.6 Retry à 3 niveaux (Lottie)
+
+```
+Niveau 1 — Extraction : _extractJsonFromRaw() strip markdown, fix trailing commas
+Niveau 2 — Validation : _validateLottieJson() vérifie structure (fr=30, op=90, layers ty=4)
+Niveau 3 — Régénération : retry 3x avec feedback contextuel au modèle
+Niveau 4 — Test runtime : _testLottieLoad() avec lottie-web (5s timeout)
+Niveau 5 — Retry externe : addMotionAtCursor() retry 3x (génération + test)
+```
+
+### 4.7 Gestion du progrès
+
+```
+Fake progress : timer indépendant (+1% / 4.5s, cap 99%)
+Real progress : remplace fake quand le streaming détecte du contenu
+Throttle : 80ms entre updates UI
+Plages : scénario 0-20%, lottie 20-55%, couleur 55-60%, frames 60-85%, ffmpeg 85-100%
+```
+
+### 4.8 Persistance Component
+
+Chaque élément de formulaire hérite de `Component` :
+- Constructeur : `new Component(id, defaultValue)`
+- Auto-sync : `localStorage[id]` ↔ `document.getElementById(id).value`
+- Checkbox : `checked` property
+- Collapsibles : `div.{id}Collaps` affiché/masqué selon valeur booléenne
 
 ---
 
-## 6. Système d'événements
+## 5. Flux de données principaux
 
-### Communication bidirectionnelle CEP
+### 5.1 Pipeline Smart Cut
 
 ```
-JavaScript → ExtendScript:
-  CSInterface.evalScript('functionJSX("param")') → Résultat string
-  Wrappé par PremiereAsync en Promises avec timeout
+[User: intention + séquences]
+    ↓
+SmartCutService.startAnalysis()
+    ↓ getSequenceList() via SequenceSelector
+[PremiereAsync] getActiveSequenceInfo() / getAllProjectSequences()
+    ↓
+[PremiereAsync] fileExists("07_Audio/Smartcut/{seq}SRT.json")
+    ↓ si manquant : auto-transcription
+[PremiereAsync] exportMultipleWav() → runSmartCutTranscription()
+    ↓ Python/Whisper via bat+vbs (modèle medium)
+[aiClient] analyzeSmartCut(transcription, intention)
+    ↓ SSE streaming JSONL
+callbacks.onSegment({start, end, title, description})
+    ↓ cartes SHORT en temps réel
+[User: validation]
+    ↓
+SmartCutService.createSequences()
+    ↓
+[PremiereAsync] createSmartCutSequence(name, inPoint, outPoint, sourceSeq)
+    ↓ JSX : création séquence nested avec In/Out
+[User: undo possible]
+    ↓
+[PremiereAsync] undoSmartCut(sequenceNames)
+```
 
-ExtendScript → JavaScript:
-  CSXSEvent dispatched via PlugPlugExternalObject
-  ├── NOTIF: {message, type} → NotificationSystem
-  ├── MODEL_DOWNLOAD_PROGRESS: {progress} → LoadingScreen
-  └── STEP2_PROGRESS: {phase, file, progress} → UI update
+### 5.2 Pipeline Motion Design (curseur)
 
-JavaScript → OpenAI:
-  fetch() avec streaming SSE
-  ├── Requête: POST /v1/responses (Bearer auth)
-  ├── Streaming: data: events → delta accumulation
-  └── Réponse: JSON array parsé et normalisé
+```
+[User: clic "Motion Design" au curseur]
+    ↓
+MotionDesignService.addMotionAtCursor(color, progress)
+    ↓
+[PremiereAsync] getCTIPosition() → {position, sequenceName}
+[PremiereAsync] getSubtitlesAtTime(seq, position, 5s) → subtitles[]
+    ↓ _findClosestWord(subtitles, cursorTime)
+_generateLottieViaClaude(subtitleText, tempDir, callbacks, focusWord)
+    ↓ Stage 1 : Creative Director prompt (scénario JSON)
+    ↓ Stage 2 : Lottie Generator prompt (JSON Lottie, retry 3x)
+    ↓ ClaudeClient._runAndPoll() → bat+vbs → poll 500ms
+_testLottieLoad(lottieJson, 5000) → lottie-web DOMLoaded
+    ↓
+applyColorToLottie(json, hexColor) → remplace blanc par couleur choisie
+renderAndExportFrames(lottieJson, framesDir)
+    ↓ lottie.loadAnimation(SVG) → 90 frames
+    ↓ SVG → XMLSerializer → Canvas → toDataURL → Base64 → cep.fs.writeFile
+convertToMov(framesDir, outputPath)
+    ↓ ffmpeg -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le
+copyToStorageLocations(movPath, fileName, projectPath)
+    ↓ AppData + Vault + .Productivity
+[PremiereAsync] importLottieOverlay(seq, vaultPath, position)
+    ↓ JSX : import .mov sur piste V8+
+```
+
+### 5.3 Pipeline Titres + Sous-titres + B-rolls
+
+```
+[User: Step 2 Execute]
+    ↓ main.js handleStep2Execute()
+Phase 1: subtitlesService.generateForFiles(files, "SRT", charLimit)
+    ↓ exportMultipleWav() → runPythonTranscription() (Whisper)
+Phase 2: titlesService.generateForFiles(files)
+    ↓ aiClient.generateTitlesBatch() (streaming SSE/NDJSON)
+    ↓ writeFile("07_Audio/Titles/{file}_titles.json")
+Phase 3: premiereAsync.analyzeCutForSequence() → FFmpeg RMS
+    ↓ premiereAsync.executeCutForSequence() → JSX coupe silences
+Phase 4: brollsService.createForFiles(files)
+    ↓ contextService.generateForFile() (cache contexte vidéo)
+    ↓ aiClient.analyzeBrolls() (streaming batch)
+    ↓ premiereAsync.createMarkers() → JSX marqueurs
+Phase 5: zoom (optionnel)
+Phase 6: motion design batch (optionnel)
+    ↓ openaiClient.analyzeMotionDesign() (15% détection)
+    ↓ Claude CLI parallèle avec stagger 10s
+```
+
+---
+
+## 6. Architecture de stockage
+
+### localStorage (via Storage/Component)
+
+| Clé | Type | Usage |
+|-----|------|-------|
+| `TokenOpenAI` | string | Clé API OpenAI |
+| `AIProvider` | boolean | true = Claude, false = OpenAI |
+| `sequenceSelectorMode` | string | "active" / "all" / "custom" |
+| `sequenceSelectorSelected` | JSON | Noms des séquences sélectionnées |
+| `smartCutState` | JSON | État Smart Cut (phase, segments, intentions) |
+| `longpass` | string | Session auth (rotation OTP) |
+| `setup_completed_v1` | string | Timestamp setup réussi |
+| `{ComponentID}` | * | Valeur de chaque composant UI |
+| `{ColorPickerID}_history` | JSON | Historique des couleurs |
+
+### Fichiers projet Premiere
+
+```
+{ProjectFolder}/
+├── 00_Sequences/      # Séquences créées
+├── 01_Vault/          # Clips importés
+│   └── motion-design/ # Overlays .mov Lottie
+├── 02_Rushs/          # Rushs source
+│   ├── Rush1/         # Séquences rush mono
+│   └── Rush2/         # Séquences rush multi
+├── 03_SFX/            # Effets sonores
+├── 04_Musiques/       # Musique
+├── 05_VFX/            # Effets visuels
+├── 06_Overlays/       # Overlays
+├── 07_Audio/          # Données IA
+│   ├── Audio/         # Transcriptions brutes JSON
+│   ├── Subtitles/     # Transcriptions SRT JSON
+│   ├── Titles/        # Titres générés JSON
+│   ├── Brolls/        # B-rolls analysés JSON + HTML previews
+│   ├── Context/       # Contexte vidéo cache JSON
+│   └── Smartcut/      # Transcriptions Smart Cut JSON
+├── 07_Trash/          # Poubelle
+├── 08_Subtitles/      # Fichiers SRT
+└── Export/            # Séquences export
 ```
 
 ---
 
 ## 7. Sécurité
 
-### Content Security Policy (CSP)
+### Content Security Policy (manifest.xml)
 
 ```
 default-src 'self';
@@ -191,161 +314,60 @@ font-src 'self';
 frame-src http://localhost;
 ```
 
-### Mesures de sécurité
+### Validation des entrées
 
-| Mesure | Détail |
-|--------|--------|
-| **Scripts** | Pas de `unsafe-eval`, pas de scripts inline |
-| **Connexions** | Whitelist stricte (OpenAI + localhost) |
-| **CEF** | `--disable-web-security` supprimé |
-| **API Key** | Validation format (préfixe sk-) |
-| **Entrées** | Sanitisation via `sanitizeInput()` |
-| **Erreurs** | Messages sans données sensibles |
+- Clé API : vérification préfixe `sk-` via `ErrorHandler.validateApiKey()`
+- Paths : escape systématique via `_escPath()` avant evalScript
+- JSON : `safeJsonParse()` avec fallback
+- Timeouts : toutes les opérations JSX ont un timeout (60s par défaut)
 
-### Vulnérabilités résiduelles connues
+### Authentification
 
-- API key stockée en clair dans localStorage (recommandation : backend proxy)
-- `unsafe-inline` toujours présent pour les styles CSS
-- Pas de chiffrement des données persistées
+- OTP 6 chiffres via backend PHP localhost
+- Longpass rotation pour sessions persistantes
+- Vérification `?verified=true` sur chaque page
 
 ---
 
-## 8. Gestion des erreurs
+## 8. Gestion d'erreurs
 
-### Architecture ErrorHandler
+### Catalogue structuré (STRUCTURED_ERRORS)
+
+15 types d'erreurs avec pattern matching :
+- API OpenAI : 401, 429, timeout, quota
+- JSX Premiere : timeout, clip/séquence introuvable
+- Transcription : audio manquant, Whisper error, Python absent
+- Réseau : DNS, SSL, connexion perdue
+- Fichiers : ENOENT
+
+### Notification utilisateur
 
 ```
-Erreur capturée
-    │
-    ▼
-ErrorHandler.handle(error, context, userMessage)
-    ├── console.error(context, error)
-    ├── getDefaultMessage(error) → Message français
-    ├── NotificationSystem.error(message)
-    └── reportToMonitoring() (stub)
+ErrorHandler.handleStructured(error, operation)
+    → Match patterns dans STRUCTURED_ERRORS
+    → Affiche : [TYPE] Opération — Message. Action suggérée
+    → window.notifications.error(formatted, duration, persistent)
 ```
 
-### Stratégie par couche
+### Retry et récupération
 
-| Couche | Stratégie |
-|--------|-----------|
-| **Services** | try/catch par fichier, continue sur erreur |
-| **OpenAI** | 3 retries, backoff exponentiel |
-| **PremiereAsync** | Timeout 60s, rejet sur erreur |
-| **ExtendScript** | notif() événement vers JS |
-| **UI** | Notifications toast (6s auto-hide) |
+- API : retry exponentiel (délai × tentative)
+- Lottie : feedback contextuel au modèle sur retry
+- Pipeline : `pipelineState` tracks status par phase, `retryFailedPhases()` disponible
+- Smart Cut : segments partiels conservés en cas d'interruption
 
 ---
 
-## 9. Patterns de performance
+## 9. Contraintes ExtendScript (ES3)
 
-### Traitement par lots (batching)
+| Interdit | Alternative |
+|----------|-------------|
+| `Date.now()` | `new Date().getTime()` |
+| `let` / `const` | `var` uniquement |
+| Arrow functions | `function(x) {}` |
+| Template literals | Concaténation `+` |
+| Destructuring | Accès explicite `obj.prop` |
+| Promises | Callbacks synchrones |
+| `JSON.parse/stringify` | Disponibles dans CEP mais pas en ExtendScript pur |
 
-| Service | Taille lot | Délai inter-lots |
-|---------|-----------|-----------------|
-| Titres (OpenAI) | 100 éléments | 1000ms |
-| B-rolls (OpenAI) | 50 éléments | 1000ms |
-
-### Progression dual-track (TitlesService)
-
-```
-Progression réelle: Comptage caractères streaming (CHARS_PER_SUBTITLE = 40)
-Progression simulée: +1 toutes les 1000ms (max 20% du lot)
-Throttle: Mise à jour UI max toutes les 80ms
-```
-
-### Optimisations DOM
-
-- `DocumentFragment` pour construction de listes
-- Debounce/throttle pour événements fréquents
-- Chargement lazy des éléments LoadingScreen
-
----
-
-## 10. Dépendances externes
-
-### Requises à l'installation
-
-| Dépendance | Vérification | Installation |
-|-----------|-------------|-------------|
-| **Python 3.x** | `python --version` | Manuelle |
-| **openai-whisper** | `python -c "import whisper"` | `pip install openai-whisper` |
-| **FFmpeg** | Présence dans `bin/ffmpeg.exe` | Embarqué |
-
-### Runtime (CDN)
-
-| Lib | URL | Usage |
-|-----|-----|-------|
-| Axios | `cdn.jsdelivr.net/npm/axios` | HTTP client |
-| Coloris CSS | `cdn.jsdelivr.net/gh/mdbassit/Coloris/dist/coloris.min.css` | Styles picker |
-| Coloris JS | `cdn.jsdelivr.net/gh/mdbassit/Coloris/dist/coloris.min.js` | Color picker |
-
-### Embarquées
-
-| Lib | Chemin | Usage |
-|-----|--------|-------|
-| CSInterface.js | `src/scripts/vendors/` | SDK Adobe CEP |
-| require.js | `src/scripts/vendors/` | Module loader |
-
----
-
-## 11. Structure des chutiers Premiere Pro
-
-L'extension crée automatiquement cette structure de bins :
-
-```
-Projet Premiere/
-├── 00_Sequences/     # Séquences créées
-├── 01_Vault/         # Stockage
-├── 02_Rushs/         # Fichiers vidéo source
-├── 03_SFX/           # Effets sonores
-├── 04_Musiques/      # Musiques
-├── 05_VFX/           # Effets visuels
-├── 06_Overlays/      # Overlays
-├── 07_Audio/         # Fichiers audio exportés (WAV)
-│   └── 07_Trash/     # Audio rejetés
-└── 08_Subtitles/     # Fichiers sous-titres
-```
-
----
-
-## 12. Constantes de configuration clés
-
-### Temps et ticks Premiere
-
-```javascript
-TICKS_PER_SECOND = 254016000000
-DEFAULT_FRAMERATE = 60.0
-```
-
-### Seuils audio (cuts)
-
-```javascript
-DEFAULT_MARGIN = 0.015       // secondes
-DEFAULT_THRESHOLD = -65      // dB RMS
-GROUP_MAX_GAP_SEC = 0.15     // gap max pour grouper les zones
-TICK_SLEEP_MS = 15           // sleep entre opérations QE
-```
-
-### Timeouts
-
-```javascript
-AME_LAUNCH_TIMEOUT_MS = 20000        // Lancement AME
-AME_QUEUE_MAX_ATTEMPTS = 30          // Tentatives queue AME
-TRANSCRIPTION_TIMEOUT_MS = 1200000   // 20 minutes Whisper
-PREMIERE_ASYNC_TIMEOUT = 60000       // Timeout PremiereAsync par défaut
-```
-
----
-
-## 13. Dette technique identifiée
-
-| Élément | Priorité | Détail |
-|---------|----------|--------|
-| **Premiere.jsx monolithique** | Haute | ~2000 lignes, pas encore modularisé |
-| **HTML non ES6 modules** | Haute | `<script>` au lieu de `<script type="module">` |
-| **Syntaxe SCSS dans CSS** | Basse | montage.css L56-61 contient un sélecteur imbriqué invalide |
-| **Chemins hardcodés** | Basse | run_transcription.bat contient des chemins spécifiques |
-| **API key en clair** | Moyenne | Pas de chiffrement localStorage |
-| **Pas de tests unitaires** | Moyenne | Architecture testable mais pas de tests |
-| **Pas de build tooling** | Basse | Pas de bundler/minifier |
+**Fichiers bat/vbs :** toujours `file.encoding = "UTF-8"` avant `open("w")`.

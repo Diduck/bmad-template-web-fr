@@ -1,14 +1,16 @@
-import OpenAIClient from '../api/openai.js';
 import ErrorHandler from '../utils/errorHandler.js';
-import { MESSAGES, SUCCESS, OPENAI } from '../utils/constants.js';
+import { MESSAGES, SUCCESS, ERRORS, OPENAI, ADD_TITLE } from '../utils/constants.js';
+import { handleClaudeAuthError } from '../utils/helpers.js';
+import { ClaudeAuthError } from '../api/claude.js';
 
 /**
  * Title generation service
+ * Accepts any AI client implementing generateTitlesBatch() and selectTitleWords() (duck typing).
  */
 class TitlesService {
-    constructor(premiereAsync, apiKey) {
+    constructor(premiereAsync, aiClient) {
         this.premiere = premiereAsync;
-        this.openai = new OpenAIClient(apiKey);
+        this.openai = aiClient;
     }
 
     /**
@@ -28,21 +30,71 @@ class TitlesService {
         // Pre-scan: count total batches across all eligible files
         const eligible = [];
         for (const file of files) {
-            const srtPath = `${projectPath}07_Audio\\${file}SRT.json`;
-            const titlesPath = `${projectPath}07_Audio\\${file}_titles.json`;
+            const srtPath = `${projectPath}07_Audio\\Subtitles\\${file}SRT.json`;
+            const titlesPath = `${projectPath}07_Audio\\Titles\\${file}_titles.json`;
 
-            const srtExists = await this.premiere.fileExists(srtPath);
+            let srtExists = await this.premiere.fileExists(srtPath);
             if (!srtExists) {
-                console.warn(`[Titles] SRT introuvable pour ${file}, skip`);
+                // Auto-transcription quand le SRT est absent
                 if (window.notifications) {
-                    window.notifications.warning(`Titres : fichier SRT introuvable pour ${file}`);
+                    window.notifications.warning(`Titres : SRT introuvable pour ${file}, transcription auto...`);
                 }
-                continue;
+                if (setMessage) {
+                    setMessage(`Transcription automatique : ${file}`);
+                }
+                try {
+                    const extensionPath = this.premiere.getExtensionPath();
+                    const audioPath = `${projectPath}07_Audio\\Audio\\`;
+                    const outputDir = `${projectPath}07_Audio\\Subtitles\\`;
+
+                    // Créer les dossiers si absents
+                    await this.premiere.createDirectory(audioPath);
+                    await this.premiere.createDirectory(outputDir);
+
+                    await this.premiere.exportMultipleWav([file], audioPath);
+
+                    const transcriptionResult = await this.premiere.runPythonTranscription(
+                        extensionPath, audioPath, 'SRT', file, 19, outputDir
+                    );
+
+                    if (!transcriptionResult || transcriptionResult === 'TRANSCRIPTION_FAILED' ||
+                        transcriptionResult === 'BATCH_NOT_FOUND' || transcriptionResult === 'CANNOT_WRITE_BATCH') {
+                        console.warn(`[Titles] Transcription échouée pour ${file}, skip`);
+                        if (window.notifications) {
+                            window.notifications.warning(`Titres : transcription échouée pour ${file}`);
+                        }
+                        continue;
+                    }
+
+                    // Retry pour flush disque
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        if (attempt > 0) await new Promise(r => setTimeout(r, 500));
+                        srtExists = await this.premiere.fileExists(srtPath);
+                        if (srtExists) break;
+                    }
+
+                    if (!srtExists) {
+                        console.warn(`[Titles] SRT toujours introuvable après transcription pour ${file}, skip`);
+                        if (window.notifications) {
+                            window.notifications.warning(`Titres : SRT introuvable après transcription pour ${file}`);
+                        }
+                        continue;
+                    }
+
+                    if (window.notifications) {
+                        window.notifications.success(`Transcription terminée pour ${file}`);
+                    }
+                } catch (transcriptionError) {
+                    console.warn(`[Titles] Erreur transcription pour ${file}:`, transcriptionError);
+                    if (window.notifications) {
+                        window.notifications.warning(`Titres : erreur transcription pour ${file}`);
+                    }
+                    continue;
+                }
             }
 
             const titlesExist = await this.premiere.fileExists(titlesPath);
             if (titlesExist) {
-                console.log(`[Titles] Titres déjà existants pour ${file}`);
                 continue;
             }
 
@@ -114,25 +166,153 @@ class TitlesService {
                 setMessage(`${MESSAGES.GENERATING_TITLES} (${i + 1}/${eligible.length}) : ${file}`);
             }
 
-            try {
+            // Helper pour la génération avec retry en cas d'erreur d'auth
+            const generateTitlesForFile = async () => {
                 const titles = await this.openai.generateTitlesBatch(subtitles, setMessage, file, onStreamProgress, onBatchComplete, onBatchStart);
-                const titlesPath = `${projectPath}07_Audio\\${file}_titles.json`;
+                const titlesPath = `${projectPath}07_Audio\\Titles\\${file}_titles.json`;
                 await this.premiere.writeFile(titlesPath, JSON.stringify(titles));
 
                 if (window.notifications) {
                     window.notifications.success(`${SUCCESS.TITLES_GENERATED} : ${file}`);
                 }
+            };
+
+            try {
+                await generateTitlesForFile();
             } catch (error) {
-                ErrorHandler.handle(
-                    error,
-                    'TitlesService.generateForFile',
-                    `Erreur génération titres pour ${file}`
-                );
-                if (window.notifications) {
-                    window.notifications.warning(`Titres échoués pour ${file}, passage au suivant...`);
+                // Gestion spéciale pour les erreurs d'auth Claude
+                const wasAuthError = await handleClaudeAuthError(error, async () => {
+                    // Retry après reconnexion
+                    if (setMessage) {
+                        setMessage(`Reconnexion réussie, reprise : ${file}`);
+                    }
+                    await generateTitlesForFile();
+                });
+
+                // Si ce n'était pas une erreur d'auth ou si le retry a échoué, logger
+                if (!wasAuthError) {
+                    ErrorHandler.handle(
+                        error,
+                        'TitlesService.generateForFile',
+                        `Erreur génération titres pour ${file}`
+                    );
+                    if (window.notifications) {
+                        window.notifications.warning(`Titres échoués pour ${file}, passage au suivant...`);
+                    }
                 }
             }
         }
+    }
+    /**
+     * Add a single title at cursor position
+     * @param {string} templateSelection - Template ID
+     * @param {string} titleColor - Hex color
+     * @param {string} startBound - Mot de début (optionnel)
+     * @param {string} endBound - Mot de fin (optionnel)
+     * @param {Object} loadingScreen - LoadingScreen instance (optionnel)
+     * @returns {Promise<void>}
+     */
+    async addTitleAtCursor(templateSelection, titleColor, startBound = '', endBound = '', loadingScreen = null) {
+        // 1. Get CTI position
+        const ctiResult = await this.premiere.getCTIPosition();
+        if (ctiResult.error) {
+            window.notifications.error(ctiResult.error);
+            return;
+        }
+
+        const { position, sequenceName } = ctiResult;
+
+        // 2. Get subtitles at cursor position
+        let subtitlesResult = await this.premiere.getSubtitlesAtTime(
+            sequenceName,
+            position,
+            ADD_TITLE.SUBTITLE_WINDOW_SEC
+        );
+
+        // SRT introuvable = pas encore transcrit → lancer auto-transcription
+        const srtMissing = subtitlesResult.error && subtitlesResult.error.includes('SRT introuvable');
+        if (subtitlesResult.error && !srtMissing) {
+            window.notifications.error(subtitlesResult.error);
+            return;
+        }
+
+        if (srtMissing || !subtitlesResult.subtitles || subtitlesResult.subtitles.length === 0) {
+            // Auto-transcription Whisper
+            if (loadingScreen) loadingScreen.setMessage('Transcription automatique en cours...');
+            window.notifications.warning('Aucun sous-titre — transcription automatique...');
+
+            try {
+                const extensionPath = this.premiere.getExtensionPath();
+                const projectPath = await this.premiere.getProjectPath();
+                const audioPath = projectPath + '07_Audio\\Audio\\';
+                const outputDir = projectPath + '07_Audio\\Subtitles\\';
+
+                // 0. Créer les dossiers si absents
+                await this.premiere.createDirectory(audioPath);
+                await this.premiere.createDirectory(outputDir);
+
+                // 1. Exporter le WAV de la séquence
+                await this.premiere.exportMultipleWav([sequenceName], audioPath);
+
+                // 2. Lancer la transcription Whisper (charLimit=19 comme le standard)
+                const transcriptionResult = await this.premiere.runPythonTranscription(
+                    extensionPath, audioPath, 'SRT', sequenceName, 19, outputDir
+                );
+
+                if (!transcriptionResult || transcriptionResult === 'TRANSCRIPTION_FAILED' ||
+                    transcriptionResult === 'BATCH_NOT_FOUND' || transcriptionResult === 'CANNOT_WRITE_BATCH') {
+                    window.notifications.error('Transcription échouée : ' + (transcriptionResult || 'erreur inconnue'));
+                    return;
+                }
+
+                // 3. Relire les sous-titres à la position du curseur (avec retry pour flush disque)
+                let retryResult = null;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    if (attempt > 0) await new Promise(r => setTimeout(r, 500));
+                    retryResult = await this.premiere.getSubtitlesAtTime(
+                        sequenceName, position, ADD_TITLE.SUBTITLE_WINDOW_SEC
+                    );
+                    if (retryResult.subtitles && retryResult.subtitles.length > 0) break;
+                }
+
+                if (!retryResult || !retryResult.subtitles || retryResult.subtitles.length === 0) {
+                    window.notifications.error('Transcription terminée mais aucun sous-titre à cette position');
+                    return;
+                }
+
+                // 4. Remplacer le résultat pour continuer le flow normal
+                subtitlesResult = retryResult;
+                if (loadingScreen) loadingScreen.setMessage(MESSAGES.ADDING_TITLE_HERE);
+                window.notifications.success('Transcription terminée');
+            } catch (transcriptionError) {
+                console.error('[AddTitle] Erreur transcription:', transcriptionError);
+                window.notifications.error('Erreur transcription : ' + transcriptionError.message);
+                return;
+            }
+        }
+
+        // 3. Ask AI to select title words (with cursor position + optional bounds)
+        const titleLines = await this.openai.selectTitleWords(subtitlesResult.subtitles, position, startBound, endBound);
+
+        if (!titleLines || titleLines.length < 2) {
+            window.notifications.error('Pas assez de mots pour créer un titre');
+            return;
+        }
+
+        // 4. Import MOGRT at cursor position
+        const importResult = await this.premiere.addSingleTitle(
+            sequenceName,
+            titleLines,
+            templateSelection,
+            titleColor
+        );
+
+        if (importResult.error) {
+            window.notifications.error(importResult.error);
+            return;
+        }
+
+        window.notifications.success(SUCCESS.TITLE_ADDED_HERE);
     }
 }
 

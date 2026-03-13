@@ -14,16 +14,17 @@ class SubtitlesService {
      * Generate subtitles for multiple files
      * @param {Array<string>} files - File names
      * @param {string} goal - Goal type (SRT or BROLL)
+     * @param {number|null} charLimit - Max characters per subtitle line (default 19)
      * @param {Function} setProgress - Progress callback
      * @returns {Promise<void>}
      */
-    async generateForFiles(files, goal, setProgress = null) {
+    async generateForFiles(files, goal, charLimit = 19, setProgress = null) {
         if (setProgress) {
             setProgress(MESSAGES.GENERATING_SUBTITLES);
         }
 
         const projectPath = await this.premiere.getProjectPath();
-        const audioPath = `${projectPath}07_Audio\\`;
+        const audioPath = `${projectPath}07_Audio\\Audio\\`;
 
         // Filter files that don't already have subtitles
         const filesToProcess = [];
@@ -35,7 +36,6 @@ class SubtitlesService {
         }
 
         if (filesToProcess.length === 0) {
-            console.log('All subtitles already exist');
             return;
         }
 
@@ -49,7 +49,7 @@ class SubtitlesService {
                     setProgress('Génération de la transcription');
                 }
 
-                await this.transcribeFile(file, audioPath, goal);
+                await this.transcribeFile(file, audioPath, goal, charLimit, projectPath);
             } catch (error) {
                 ErrorHandler.handle(
                     error,
@@ -70,9 +70,9 @@ class SubtitlesService {
     async checkSubtitleExists(file, goal, projectPath) {
         let path;
         if (goal === "BROLL") {
-            path = `${projectPath}07_Audio\\${file}.json`;
+            path = `${projectPath}07_Audio\\Audio\\${file}.json`;
         } else {
-            path = `${projectPath}07_Audio\\${file}SRT.json`;
+            path = `${projectPath}07_Audio\\Subtitles\\${file}SRT.json`;
         }
 
         return await this.premiere.fileExists(path);
@@ -83,21 +83,27 @@ class SubtitlesService {
      * @param {string} file - File name
      * @param {string} audioPath - Audio folder path
      * @param {string} goal - Goal type
+     * @param {number} charLimit - Max characters per subtitle line (default 19)
+     * @param {string} projectPath - Project path for outputDir routing
      * @returns {Promise<void>}
      */
-    async transcribeFile(file, audioPath, goal) {
+    async transcribeFile(file, audioPath, goal, charLimit = 19, projectPath = '') {
         const extensionPath = this.csInterface
-            .getSystemPath(SystemPath.EXTENSION)
-            .replace(/\//g, "\\\\");
+            .getSystemPath(SystemPath.EXTENSION);
+
+        // SRT → output dans Subtitles/, BROLL → reste dans Audio/ (même dossier que WAV)
+        const outputDir = (goal === "SRT" && projectPath)
+            ? `${projectPath}07_Audio\\Subtitles\\`
+            : null;
 
         const result = await this.premiere.runPythonTranscription(
             extensionPath,
             audioPath,
             goal,
-            file
+            file,
+            charLimit,
+            outputDir
         );
-
-        console.log('Transcription result:', result);
 
         if (!result || result === "TRANSCRIPTION_FAILED" || result === "BATCH_NOT_FOUND" || result === "CANNOT_WRITE_BATCH") {
             throw new Error(`Transcription échouée pour ${file}: ${result}`);

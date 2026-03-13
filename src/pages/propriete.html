@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Productivity</title>
+    <script src="../scripts/vendors/CSInterface.js"></script>
+    <script src="../scripts/components/collaps.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.js"></script>
+    <script>
+      // Charger les polices système via Node.js (disponible en CEP) + cache localStorage
+      (function() {
+        var CACHE_KEY = 'systemFonts_v1';
+        var cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          try { window.systemFonts = JSON.parse(cached); return; } catch(e) {}
+        }
+        try {
+          var cp = require('child_process');
+          var cmd = 'powershell -NoProfile -Command "[void][System.Reflection.Assembly]::LoadWithPartialName(\'System.Drawing\'); (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }"';
+          var output = cp.execSync(cmd, { encoding: 'utf8', timeout: 10000 });
+          var fonts = output.trim().split(/\r?\n/).filter(function(f) { return f.trim().length > 0; }).map(function(f) { return f.trim(); });
+          window.systemFonts = fonts;
+          localStorage.setItem(CACHE_KEY, JSON.stringify(fonts));
+        } catch(e) {
+          window.systemFonts = [];
+        }
+      })();
+    </script>
+    <script type="module" src="../scripts/pages/propriete.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.css"/>
+    <link rel="stylesheet" href="../styles/main.css">
+    <link rel="stylesheet" href="../styles/pages/propriete.css">
+    <link rel="stylesheet" href="../styles/components/notification.css">
+    <link rel="stylesheet" href="../styles/components/sequence-selector.css">
+    <link rel="stylesheet" href="../styles/components/status-bar.css">
+  </head>
+  <body class="propriete-page">
+    <header>
+      <div class="step-nav">
+        <a href="./index.html"><div class="step"><p>Création</p></div></a>
+        <a href="./smartcut.html"><div class="step"><p>Smart Cut</p></div></a>
+        <a href="./montage.html"><div class="step"><p>Montage</p></div></a>
+        <a href="#"><div class="step current-step"><p>Propriété</p></div></a>
+        <a href="./export.html"><div class="step"><p>Exportation</p></div></a>
+      </div>
+      <div class="header-actions">
+        <div class="header-icon-wrapper" id="seqSelectorToggle">
+          <button class="header-icon" aria-label="Sélection des séquences"
+                  aria-expanded="false" aria-controls="seqSelectorPopup">
+            <img src="../../assets/icons/sequences.svg" alt="">
+          </button>
+          <div id="seqSelectorPopup" class="seq-selector-popup" style="display: none;">
+          </div>
+        </div>
+        <a href="./settings.html" class="header-icon" aria-label="Paramètres">
+          <img src="../../assets/icons/settings.svg" alt="">
+        </a>
+      </div>
+    </header>
+
+    <section id="main">
+      <div class="propriete-actions">
+        <button type="button" class="button-blue" id="propriete-save" disabled>Sauvegarder</button>
+        <button type="button" class="btn-undo" id="propriete-undo">Annuler</button>
+        <button type="button" class="btn-refresh" id="propriete-refresh">Rafraîchir</button>
+        <span class="propriete-status" id="propriete-status"></span>
+      </div>
+      <div id="properties-container">
+        <div class="propriete-empty">
+          <p>Sélectionnez des clips MOGRT dans la timeline Premiere Pro</p>
+          <p class="desc">Les propriétés des clips sélectionnés s'afficheront ici</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="statusBar" class="status-bar">
+      <span id="statusBarText" class="status-bar__text"></span>
+    </div>
+  </body>
+</html>

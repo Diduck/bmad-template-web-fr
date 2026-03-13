@@ -1,319 +1,328 @@
 # Guide de développement - Productivity Extension
 
-> Documentation générée le 2026-02-24 | Scan exhaustif
+> Scan exhaustif | Mise à jour : 2026-03-05
 
 ---
 
 ## 1. Prérequis
 
-| Outil | Version | Obligatoire | Notes |
-|-------|---------|------------|-------|
-| **Adobe Premiere Pro** | v15.0+ (CC 2020+) | Oui | Hôte de l'extension |
-| **Python** | 3.x | Oui | Pour transcription Whisper |
-| **pip** | (inclus avec Python) | Oui | Gestionnaire de paquets |
-| **openai-whisper** | dernière | Oui | `pip install openai-whisper` |
-| **FFmpeg** | (embarqué dans bin/) | Oui | Déjà inclus dans le projet |
-| **Clé API OpenAI** | format sk-... | Oui | Pour titres IA et B-rolls |
-| **VSCode** | dernière | Recommandé | IDE avec support ExtendScript |
+| Dépendance | Version | Obligatoire | Usage |
+|-----------|---------|-------------|-------|
+| Adobe Premiere Pro | 2021+ (v15.0+) | Oui | Hôte de l'extension |
+| Python | 3.8+ | Oui | Transcription Whisper |
+| openai-whisper | latest | Oui | Modèle de transcription |
+| FFmpeg | latest | Oui | Encodage ProRes + analyse RMS |
+| Clé API OpenAI | `sk-...` | Oui (si provider OpenAI) | API IA |
+| Claude CLI | latest | Non (si provider Claude) | Pipeline Lottie |
+| Node.js | v18+ | Non | Seulement pour Claude streaming (temp/) |
 
 ---
 
 ## 2. Installation
 
-### 2.1 Emplacement de l'extension
+### 2.1 Extension CEP
 
-L'extension doit se trouver dans le dossier CEP d'Adobe :
+1. Copier le dossier `Productivity` dans :
+   ```
+   Windows: %APPDATA%/Adobe/CEP/extensions/
+   Mac: ~/Library/Application Support/Adobe/CEP/extensions/
+   ```
 
-```
-Windows: %APPDATA%\Adobe\CEP\extensions\Productivity\
-Mac:     ~/Library/Application Support/Adobe/CEP/extensions/Productivity/
-```
+2. Activer le mode debug CEP (Windows) :
+   ```
+   Registre: HKEY_CURRENT_USER\Software\Adobe\CSXS.11
+   Clé: PlayerDebugMode = 1 (REG_SZ)
+   ```
 
-### 2.2 Activer le mode debug CEP
+3. Redémarrer Premiere Pro.
 
-Pour le développement, activer le debug des extensions non signées :
+4. Ouvrir le panel : **Fenêtre → Extensions → Productivity**
 
-**Windows (Registre) :**
-```
-HKEY_CURRENT_USER\Software\Adobe\CSXS.11
-Nom: PlayerDebugMode
-Type: REG_SZ
-Valeur: 1
-```
-
-Remplacer `CSXS.11` par la version correspondant à votre Premiere Pro.
-
-### 2.3 Installation des dépendances Python
+### 2.2 Dépendances Python
 
 ```bash
-python -m pip install openai-whisper
+pip install openai-whisper pydub moviepy
 ```
 
-> L'extension vérifie automatiquement les dépendances au premier lancement via `SetupManager`. Le résultat est mis en cache dans localStorage (`setup_completed_v1`).
+L'extension vérifie automatiquement ces dépendances au premier lancement (SetupManager).
 
-### 2.4 FFmpeg
+### 2.3 FFmpeg
 
-FFmpeg est déjà embarqué dans `bin/ffmpeg.exe`. Aucune installation nécessaire.
+Placer `ffmpeg.exe` dans le dossier `bin/` de l'extension :
+```
+Productivity/bin/ffmpeg.exe
+```
+
+### 2.4 Clé API OpenAI
+
+1. Obtenir une clé sur [platform.openai.com](https://platform.openai.com)
+2. Dans l'extension : **Settings → Clé API OpenAI**
+3. Format attendu : `sk-...`
 
 ---
 
-## 3. Configuration
+## 3. Structure du développement
 
-### 3.1 Fichier manifeste (`CSXS/manifest.xml`)
+### 3.1 Aucun build nécessaire
 
-Le manifeste définit :
-- **ExtensionBundleId :** `com.productivity.it`
-- **Host :** PPRO v15.0-99.0
-- **MainPath :** `./src/pages/auth.html` (point d'entrée)
-- **ScriptPath :** `./src/jsx/Premiere.jsx` (script hôte)
-- **Panel :** 850×500px, type Panel, menu "Productivity"
-- **CEF Parameters :** Node.js activé, accès fichiers
+L'extension utilise du JavaScript ES6 natif avec modules (`import`/`export`). Pas de bundler, pas de transpilation.
 
-### 3.2 Debug CEP (`.debug`)
+**Modification → Rechargement :**
+1. Modifier un fichier .js, .html ou .css
+2. Dans Premiere Pro, fermer et rouvrir le panel (ou recharger via debug port 8099)
 
-```xml
-<Extension Id="com.productivity.it">
-  <Host Name="PPRO" Port="8099"/>
-</Extension>
-```
+### 3.2 Debug
 
-Port de debug : **8099** — accessible via Chrome DevTools à `http://localhost:8099`
+- **Chrome DevTools :** `http://localhost:8099` (port défini dans `.debug`)
+- **Console JSX :** Les messages `logMessage()` apparaissent dans la console Premiere
+- **Notifications :** `notif(msg, type)` envoie des CSXSEvents au panel
 
-### 3.3 Variables d'environnement (via UI)
-
-| Variable | Emplacement UI | Stockage |
-|----------|---------------|----------|
-| Token OpenAI | montage.html > Options B-rolls | localStorage `TokenOpenAI` |
-| Style sous-titres | montage.html > Options Sous-titres | localStorage `OptionPresetStyle` |
-| Marge cuts | montage.html > Options Auto-Cuts | localStorage `MargeCuts` |
-| Limite cuts | montage.html > Options Auto-Cuts | localStorage `LimiteCuts` |
-
----
-
-## 4. Structure du code source
-
-```
-src/
-├── jsx/Premiere.jsx         # ExtendScript (API Premiere Pro)
-├── pages/*.html             # Pages UI du panneau
-├── scripts/
-│   ├── main.js              # Point d'entrée, orchestration
-│   ├── index.js             # Hub re-exports
-│   ├── api/openai.js        # Client OpenAI
-│   ├── services/            # Logique métier (subtitles, titles, brolls, setup)
-│   ├── components/          # UI (Component, ColorPicker, Notifications, Loading)
-│   ├── utils/               # Infra (constants, premiereAsync, errorHandler, helpers, storage, verify)
-│   └── vendors/             # Libs (CSInterface.js, require.js)
-└── styles/                  # CSS (main + pages + components)
-```
-
-### Conventions de nommage
-
-| Élément | Convention | Exemple |
-|---------|-----------|---------|
-| Fichiers | camelCase | `errorHandler.js` |
-| Classes | PascalCase | `NotificationSystem` |
-| Fonctions | camelCase | `generateForFiles()` |
-| Constantes | SCREAMING_SNAKE | `OPENAI.BATCH_SIZE` |
-| Composants CSS | kebab-case | `.button-blue` |
-| IDs HTML | PascalCase | `OptionSubtitles` |
-
-### Standards de formatage (`.editorconfig`)
-
-| Fichier | Indentation | Fin de ligne |
-|---------|-------------|-------------|
-| *.js, *.jsx | 4 espaces | LF |
-| *.html, *.css | 2 espaces | LF |
-| *.json, *.yml | 2 espaces | LF |
-| *.bat, *.cmd | 4 espaces | CRLF |
-
----
-
-## 5. Développement
-
-### 5.1 Lancer l'extension
-
-1. Ouvrir Adobe Premiere Pro
-2. Menu **Fenêtre > Extensions > Productivity**
-3. Le panneau s'ouvre sur la page d'authentification
-
-### 5.2 Debug JavaScript (Chrome DevTools)
-
-1. Ouvrir Chrome/Edge
-2. Naviguer vers `http://localhost:8099`
-3. Sélectionner le panneau Productivity
-4. Utiliser les DevTools normalement (Console, Sources, Network)
-
-### 5.3 Debug ExtendScript (VSCode)
-
-La configuration est dans `.vscode/launch.json` :
-```json
-{
-  "type": "extendscript-debug",
-  "request": "launch",
-  "name": "Premiere Pro",
-  "hostAppSpecifier": "premierepro",
-  "script": "${file}"
-}
-```
-
-1. Installer l'extension VSCode "ExtendScript Debugger"
-2. Ouvrir `Premiere.jsx`
-3. F5 pour lancer le debugger
-4. Points d'arrêt disponibles
-
-### 5.4 Modifier le code
-
-**JavaScript (src/scripts/) :**
-- Modifier le fichier
-- Recharger le panneau CEP (clic droit > Recharger ou Ctrl+R dans DevTools)
-
-**ExtendScript (src/jsx/) :**
-- Modifier `Premiere.jsx`
-- Le fichier est rechargé automatiquement à chaque `evalScript()`
-- Ou fermer/rouvrir le panneau
-
-**HTML/CSS :**
-- Modifier le fichier
-- Recharger le panneau
-
-### 5.5 Ajouter un nouveau service
+### 3.3 Modules ES6
 
 ```javascript
-// 1. Créer src/scripts/services/monService.js
-export class MonService {
-    constructor(premiereAsync) {
-        this.premiereAsync = premiereAsync;
-    }
+// Import
+import { OPENAI, MESSAGES } from '../utils/constants.js';
+import Component from '../components/Component.js';
 
-    async maMethode(params) {
-        // Logique métier
-    }
-}
-
-// 2. Exporter dans src/scripts/index.js
-export { MonService } from './services/monService.js';
-
-// 3. Instancier dans main.js
-import { MonService } from './index.js';
-const monService = new MonService(premiereAsync);
+// Export
+export default class MyService { ... }
+export function myHelper() { ... }
 ```
 
-### 5.6 Ajouter une fonction JSX
-
-```javascript
-// 1. Dans Premiere.jsx, ajouter la fonction
-function maFonctionJSX(param1, param2) {
-    // Utiliser l'API Premiere Pro
-    var result = app.project.activeSequence.name;
-    return JSON.stringify({ name: result });
-}
-
-// 2. Dans premiereAsync.js, ajouter le wrapper
-async maMethodeAsync(param1, param2) {
-    const script = `maFonctionJSX("${param1}", "${param2}")`;
-    return this._evalWithTimeout(script);
-}
-```
+Les vendors (`CSInterface.js`, `require.js`) sont chargés comme scripts globaux dans le HTML.
 
 ---
 
-## 6. Tests
+## 4. Conventions du code
 
-### 6.1 Tests manuels
+### 4.1 JavaScript (couche 2)
 
-Pas de framework de tests automatisés en place. Tests manuels recommandés :
+| Convention | Exemple |
+|-----------|---------|
+| Classes ES6 | `class TitlesService { ... }` |
+| Modules ES6 | `import/export` |
+| Async/await | `async function foo() { ... }` |
+| Nommage | camelCase (variables, fonctions), PascalCase (classes) |
+| Constantes | SCREAMING_SNAKE_CASE dans `constants.js` |
+| Services | Un fichier = une classe = un domaine métier |
+| Composants | Héritent de `Component` pour la persistance |
 
-| Test | Procédure |
-|------|-----------|
-| **Auth** | Ouvrir panneau → vérifier OTP → connexion |
-| **Step 1** | Sélectionner format → créer chutiers → créer séquences |
-| **Transcription** | Activer sous-titres → exécuter → vérifier JSON |
-| **Titres IA** | Entrer clé OpenAI → exécuter → vérifier _titles.json |
-| **Auto-cuts** | Configurer marge/limite → analyser → vérifier forme d'onde |
-| **B-rolls** | Exécuter → vérifier _brolls.json + marqueurs |
-| **Export** | Sélectionner formats → exécuter |
+### 4.2 ExtendScript (couche 4)
 
-### 6.2 Vérification des dépendances
+| Convention | Exemple |
+|-----------|---------|
+| Syntaxe | ES3 strict : `var`, `function`, pas d'arrow |
+| Nommage | PascalCase pour les fonctions publiques (`CreateWorkflow`) |
+| Commentaire | `// FONCTION PUBLIQUE` pour les fonctions appelées depuis JS |
+| Retour | `JSON.stringify(result)` pour les données structurées |
+| Erreurs | `try/catch` avec `notif(error.message, "error")` |
+| Temps | `new Date().getTime()` (jamais `Date.now()`) |
+| Encodage | `file.encoding = "UTF-8"` avant toute écriture |
+
+### 4.3 CSS
+
+| Convention | Exemple |
+|-----------|---------|
+| Variables | `var(--background-color)` |
+| Nommage | Classes descriptives (`.seq-selector-popup`, `.short-card`) |
+| Organisation | 1 fichier par composant dans `styles/components/` |
+| Dark theme | Fond sombre, texte clair |
+
+---
+
+## 5. Ajout d'une nouvelle fonctionnalité
+
+### 5.1 Nouveau service IA
+
+1. Créer `src/scripts/services/monService.js`
+2. Accepter `aiClient` en constructeur (duck typing)
+3. Utiliser `aiClient.call()` pour les appels IA
+4. Créer le template prompt dans `config/templates/mon-prompt.md`
+5. Ajouter le chemin dans `constants.js → TEMPLATE_PATHS`
+6. Instancier dans `main.js` avec `getAIClient()`
+
+### 5.2 Nouvelle page HTML
+
+1. Créer `src/pages/mapage.html`
+2. Inclure les scripts de base :
+   ```html
+   <script src="../scripts/vendors/CSInterface.js"></script>
+   <script src="../scripts/components/loading.js"></script>
+   <script type="module" src="../scripts/main.js"></script>
+   <link rel="stylesheet" href="../styles/main.css">
+   ```
+3. Ajouter le lien dans la navigation `step-nav`
+4. Créer `src/scripts/pages/mapage.js` (contrôleur)
+5. Détecter la page dans `main.js` pour initialisation spécifique
+
+### 5.3 Nouvelle fonction JSX
+
+1. Ajouter la fonction dans `src/jsx/Premiere.jsx`
+2. Utiliser la syntaxe ES3 :
+   ```javascript
+   function MaFonction(arg1, arg2) {
+       // FONCTION PUBLIQUE
+       try {
+           var result = { success: true };
+           return JSON.stringify(result);
+       } catch (e) {
+           return JSON.stringify({ error: e.message });
+       }
+   }
+   ```
+3. Ajouter le wrapper dans `src/scripts/utils/premiereAsync.js` :
+   ```javascript
+   async maFonction(arg1, arg2) {
+       const result = await this._evalWithTimeout(
+           'MaFonction("' + this._escPath(arg1) + '", "' + this._escPath(arg2) + '")'
+       );
+       return JSON.parse(result);
+   }
+   ```
+
+### 5.4 Nouveau composant UI
+
+1. Créer `src/scripts/components/MonComposant.js`
+2. Étendre `Component` pour la persistance :
+   ```javascript
+   import Component from './Component.js';
+   export default class MonComposant extends Component {
+       constructor() { super('monId', defaultValue); }
+   }
+   ```
+3. Ajouter le CSS dans `src/styles/components/mon-composant.css`
+4. Instancier dans `main.js` → `window.Components`
+
+---
+
+## 6. Commandes de développement
+
+### Rechargement de l'extension
+
+```
+Premiere Pro → Fenêtre → Extensions → (fermer) → (rouvrir) Productivity
+```
+
+Ou via DevTools : `location.reload()` dans la console.
+
+### Debug ExtendScript
+
+```javascript
+// Dans Premiere.jsx
+$.writeln("Debug: " + variable);  // Apparaît dans ESTK
+logMessage("Debug: " + variable); // Apparaît dans la console CEP
+notif("Debug message", "error");  // Notification dans le panel
+```
+
+### Test transcription
 
 ```bash
-# Vérifier Python
-python --version
+python scripts/transcription/transcribe.py "chemin/audio.wav" "SRT" 19 "medium"
+```
 
-# Vérifier Whisper
-python -c "import whisper; print('OK')"
+### Test FFmpeg
 
-# Vérifier FFmpeg
-bin\ffmpeg.exe -version
+```bash
+bin/ffmpeg.exe -i input.wav -af "astats=metadata=1,ametadata=print:key=lavfi.astats.Overall.RMS_level" -f null -
+```
+
+### Test Lottie (navigateur)
+
+Ouvrir `test-lottie-preview.html` dans un navigateur pour tester un JSON Lottie.
+
+---
+
+## 7. Patterns récurrents
+
+### 7.1 Appel IA avec streaming
+
+```javascript
+const result = await aiClient.call({
+    model: OPENAI.MODEL,
+    maxTokens: OPENAI.MAX_TOKENS,
+    input: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+    ],
+    onDelta: (accumulated) => {
+        // Progression streaming
+        loadingScreen.setProgress(percent, 'Generating...');
+    }
+});
+```
+
+### 7.2 Opération Premiere avec timeout
+
+```javascript
+const result = await premiereAsync._evalWithTimeout(
+    'MaFonction("' + premiereAsync._escPath(path) + '")',
+    30000  // timeout 30s
+);
+const parsed = JSON.parse(result);
+if (parsed.error) throw new Error(parsed.error);
+```
+
+### 7.3 Auto-transcription conditionnelle
+
+```javascript
+const exists = await premiereAsync.fileExists(srtPath);
+if (!exists) {
+    await subtitlesService.transcribeFile(file, audioPath, "SRT", charLimit, projectPath);
+}
+const json = await premiereAsync.readFile(srtPath);
+const data = JSON.parse(json);
+```
+
+### 7.4 Notification d'erreur structurée
+
+```javascript
+try {
+    await riskyOperation();
+} catch (error) {
+    ErrorHandler.handleStructured(error, 'Mon opération');
+    // Affiche : [TYPE] Mon opération — Message. Action suggérée
+}
 ```
 
 ---
 
-## 7. Structure des fichiers de sortie
+## 8. Limitations connues
 
-Les fichiers générés par l'extension sont stockés dans le dossier `07_Audio` du projet Premiere :
-
-| Fichier | Source | Contenu |
-|---------|--------|---------|
-| `{nom}.wav` | Export AME | Audio extrait de la séquence |
-| `{nom}.json` | Whisper (BROLL) | Transcription pour analyse B-roll |
-| `{nom}SRT.json` | Whisper (SRT) | Transcription pour sous-titres |
-| `{nom}_titles.json` | OpenAI | Titres IA générés |
-| `{nom}_brolls.json` | OpenAI | Analyse B-roll (réponses IA) |
-| `{nom}_brolls.html` | BrollsService | Preview HTML avec liens Envato |
-| `CutZoneList.json` | FFmpeg | Zones de silence détectées |
-| `stdout.log` | Python | Log de transcription |
+| Limitation | Détail |
+|-----------|--------|
+| ExtendScript ES3 | Pas de let/const, arrow functions, template literals, destructuring |
+| Canvas offscreen | Ne fonctionne pas pour l'export Lottie → SVG visible obligatoire |
+| evalScript sync | CSInterface.evalScript est bloquant côté JSX |
+| Pas de hot reload | Fermer/rouvrir le panel pour recharger |
+| CEP dépréciée | Adobe migre vers UXP (compatibilité future à surveiller) |
+| CDN dépendances | Coloris, Axios, lottie-web chargés via CDN (requiert internet) |
+| ffmpeg.exe taille | ~133 MB inclus dans l'extension |
 
 ---
 
-## 8. Problèmes connus et solutions
+## 9. Variables d'environnement et configuration
 
-### Panel ne s'affiche pas
+### localStorage
 
-1. Vérifier que le mode debug CEP est activé (registre Windows)
-2. Vérifier que `CSXS/manifest.xml` existe et est valide
-3. Redémarrer Premiere Pro
+| Clé | Type | Défaut | Description |
+|-----|------|--------|-------------|
+| `TokenOpenAI` | string | "x" | Clé API OpenAI |
+| `AIProvider` | boolean | false | true=Claude, false=OpenAI |
+| `TemplateSelection` | string | "1" | Template MOGRT sélectionné |
+| `TitleColorPicker` | string | "#ff4949ff" | Couleur des titres |
+| `MotionColorPicker` | string | "#ffffffff" | Couleur motion design |
+| `SubtitleCharLimit` | number | 19 | Limite caractères sous-titres |
+| `MargeCuts` | number | 0.015 | Marge de coupe (secondes) |
+| `setup_completed_v1` | string | — | Timestamp setup réussi |
 
-### Erreur "EvalScript error"
+### Constantes de configuration (constants.js)
 
-1. Vérifier la syntaxe dans `Premiere.jsx`
-2. Ouvrir Chrome DevTools (`localhost:8099`) pour voir les erreurs
-3. Vérifier que les chemins de fichiers sont correctement échappés (backslashes doublés)
-
-### Transcription échoue
-
-1. Vérifier `python --version` (doit être 3.x)
-2. Vérifier `python -c "import whisper"`
-3. Vérifier que `stdout.log` existe dans le dossier audio
-4. Timeout de 20 minutes — les gros fichiers peuvent prendre du temps
-
-### OpenAI retourne des erreurs
-
-1. Vérifier le format de la clé (préfixe `sk-`)
-2. Vérifier la console réseau (DevTools > Network)
-3. En cas de rate limit (429), l'extension retry automatiquement (3 tentatives)
-
-### FFmpeg analyse échoue
-
-1. Vérifier que `bin/ffmpeg.exe` existe
-2. Vérifier que le fichier WAV source existe
-3. Consulter les logs dans la console ExtendScript
-
----
-
-## 9. Historique du refactoring
-
-**Version 1.0.0 → 2.0.0** (Février 2026)
-
-| Aspect | Avant | Après |
-|--------|-------|-------|
-| Architecture | 2 fichiers monolithiques | 15+ modules spécialisés |
-| main.js | 1611 lignes | ~500 lignes |
-| Fonctions >50 lignes | 15+ | 0 |
-| Sécurité CSP | `unsafe-eval` + `unsafe-inline` | `script-src 'self'` strict |
-| CEF flags | `--disable-web-security` | Supprimé |
-| Gestion erreurs | Dispersée | Centralisée (ErrorHandler) |
-| Nommage | Mixte | camelCase uniforme |
-| Duplication code | Extensive | Éliminée |
-
-**Fichiers de backup :** `backup/` contient les originaux (main.js, collaps.js, verify.js, manifest.xml).
+| Constante | Valeur | Description |
+|-----------|--------|-------------|
+| `OPENAI.API_URL` | `https://api.openai.com/v1/responses` | Endpoint API |
+| `OPENAI.MAX_TOKENS` | 9000 | Tokens max par requête |
+| `OPENAI.BATCH_SIZE` | 100 | Sous-titres par batch |
+| `MOTION_DESIGN.FPS` | 30 | Framerate Lottie |
+| `MOTION_DESIGN.CANVAS_SIZE` | 1000 | Résolution 1000x1000 |
+| `MOTION_DESIGN.DURATION_SEC` | 3 | Durée animation (90 frames) |
+| `AUTH.BASE_URL` | `http://localhost/Productivity_php` | Backend auth |

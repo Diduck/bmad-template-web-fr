@@ -1,0 +1,34 @@
+.streaming-zone {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  min-height: 0;
+}
+
+.streaming-zone::-webkit-scrollbar {
+  width: 6px;
+}
+
+.streaming-zone::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+}
+
+.streaming-zone::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.streaming-zone::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.streaming-zone:empty::after {
+  content: "Les resultats apparaitront ici";
+  display: block;
+  text-align: center;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: "Gotham Regular", sans-serif;
+  font-size: 12px;
+}

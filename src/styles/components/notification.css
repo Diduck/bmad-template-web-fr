@@ -6,7 +6,7 @@
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 9999;
+    z-index: 9999999;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -138,6 +138,40 @@
     font-weight: bold;
     margin-right: 12px;
     flex-shrink: 0;
+}
+
+/* Notifications persistantes — pas de barre de progression, bouton fermeture visible */
+.notification.persistent {
+    padding-right: 40px;
+}
+
+/* Défensif : la progress-bar n'est pas créée en JS quand persistent=true,
+   mais cette règle protège contre un éventuel ajout DOM externe */
+.notification.persistent .progress-bar {
+    display: none;
+}
+
+.notification-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ebebeb;
+    border-radius: 50%;
+    font-size: 16px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.2s ease;
+}
+
+.notification-close:hover {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 /* Animations */

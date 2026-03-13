@@ -37,6 +37,9 @@ nul
 .env.local
 .env.*.local
 
+# Runtime-generated transcription batch
+scripts/transcription/run_transcription.bat
+
 # Logs
 *.log
 npm-debug.log*
@@ -46,3 +49,7 @@ dist/
 build/
 .next/
 out/
+
+# Generated runtime files
+temp/
+lottie-frames/

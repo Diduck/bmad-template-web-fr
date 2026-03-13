@@ -59,9 +59,9 @@ class ClaudeClient {
     /**
      * Retourne le dossier temporaire de l'extension, le crée si nécessaire.
      */
-    _getTempDir() {
+    async _getTempDir() {
         const tempDir = this._pathJoin(this._extensionRoot, 'temp');
-        try { window.cep.fs.makedir(tempDir); } catch (e) { /* existe déjà */ }
+        await this.premiere.ensureDir(tempDir);
         return tempDir;
     }
 
@@ -321,7 +321,7 @@ class ClaudeClient {
         }
         const promptContent = parts.join('\n\n---\n\n');
 
-        const tempDir = this._getTempDir();
+        const tempDir = await this._getTempDir();
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -482,10 +482,89 @@ class ClaudeClient {
     }
 
     /**
+     * Découpe une transcription en lots de durée maximale (défaut 45 min).
+     * @param {Array} transcription - Segments formatés [{index, start, end, text}]
+     * @param {number} maxDurationSec - Durée max par lot en secondes (défaut 2700 = 45 min)
+     * @returns {Array<Array>} Lots de segments
+     */
+    _splitTranscriptionIntoChunks(transcription, maxDurationSec = 2700) {
+        if (!transcription || transcription.length === 0) return [transcription];
+
+        const totalDuration = transcription[transcription.length - 1].end - transcription[0].start;
+        if (totalDuration <= maxDurationSec) return [transcription];
+
+        const chunks = [];
+        let chunkStartIdx = 0;
+
+        for (let i = 1; i < transcription.length; i++) {
+            const chunkDuration = transcription[i].end - transcription[chunkStartIdx].start;
+            if (chunkDuration > maxDurationSec) {
+                chunks.push(transcription.slice(chunkStartIdx, i));
+                chunkStartIdx = i;
+            }
+        }
+
+        if (chunkStartIdx < transcription.length) {
+            chunks.push(transcription.slice(chunkStartIdx));
+        }
+
+        return chunks;
+    }
+
+    /**
      * Analyze transcription for Smart Cut segments (miroir de OpenAIClient.analyzeSmartCut)
      * Pseudo-streaming par polling — émet les segments JSONL au fur et à mesure.
+     * Découpe automatiquement en lots de ~45 min si la transcription est longue.
      */
     async analyzeSmartCut(transcription, intention, callbacks = {}, abortSignal = null, overrides = {}) {
+        const { onSegment, onProgress, onError, onComplete, onStepChange } = callbacks;
+
+        // Batching : découper les longues transcriptions en lots de ~45 min
+        if (!overrides.userData && transcription && transcription.length > 0) {
+            const chunks = this._splitTranscriptionIntoChunks(transcription, 2700);
+            if (chunks.length > 1) {
+                console.log(`[CLAUDE-SC] Transcription découpée en ${chunks.length} lots de ~45min`);
+                let totalSegments = 0;
+
+                for (let c = 0; c < chunks.length; c++) {
+                    if (abortSignal && abortSignal.aborted) break;
+
+                    const chunkStartMin = Math.floor(chunks[c][0].start / 60);
+                    const chunkEndMin = Math.floor(chunks[c][chunks[c].length - 1].end / 60);
+                    console.log(`[CLAUDE-SC] Lot ${c + 1}/${chunks.length} : ${chunks[c].length} segments (${chunkStartMin}-${chunkEndMin} min)`);
+
+                    if (onStepChange) {
+                        onStepChange('batch_start', `Lot ${c + 1}/${chunks.length} (${chunkStartMin}-${chunkEndMin} min)`);
+                    }
+
+                    await this._analyzeSmartCutSingle(chunks[c], intention, {
+                        onSegment: (segment) => {
+                            totalSegments++;
+                            segment.index = totalSegments;
+                            if (onSegment) onSegment(segment);
+                        },
+                        onProgress: (count, done) => {
+                            if (onProgress) onProgress(totalSegments, done);
+                        },
+                        onError,
+                        onComplete: null
+                    }, abortSignal, overrides);
+                }
+
+                if (onComplete) onComplete(totalSegments);
+                return;
+            }
+        }
+
+        // Pas de batching nécessaire — analyse directe
+        return this._analyzeSmartCutSingle(transcription, intention, callbacks, abortSignal, overrides);
+    }
+
+    /**
+     * Analyse Smart Cut pour un lot unique de transcription.
+     * @private
+     */
+    async _analyzeSmartCutSingle(transcription, intention, callbacks = {}, abortSignal = null, overrides = {}) {
         const { onSegment, onProgress, onError, onComplete } = callbacks;
 
         const systemPrompt = overrides.systemPrompt || this._getSmartCutSystemPrompt();
@@ -496,7 +575,7 @@ class ClaudeClient {
         };
 
         const promptContent = systemPrompt + '\n\n---\n\n' + JSON.stringify(userData);
-        const tempDir = this._getTempDir();
+        const tempDir = await this._getTempDir();
 
         this._streamDebugDone = false;
         const timestamp = Date.now();
@@ -515,7 +594,7 @@ class ClaudeClient {
 
         const POLL_INTERVAL = 500;
         const STABLE_TIMEOUT = 20000;
-        const TIMEOUT_MS = 300000; // 5 minutes pour Smart Cut
+        const TIMEOUT_MS = 600000; // 10 minutes par lot Smart Cut
         const startTime = Date.now();
         let lastContent = '';
         let lastContentChangeTime = startTime;

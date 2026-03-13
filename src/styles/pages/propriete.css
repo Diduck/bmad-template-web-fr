@@ -1,0 +1,499 @@
+/* ============================================
+   Layout principal — compact
+   ============================================ */
+.propriete-page #main {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 12px 24px;
+}
+
+/* ============================================
+   Barre d'actions fixe — compact
+   ============================================ */
+.propriete-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 2px;
+    position: sticky;
+    top: 60px;
+    background-color: #262626;
+    z-index: 10;
+}
+
+.propriete-actions .button-blue {
+    padding: 6px 18px;
+    font-size: 13px;
+    border-radius: 8px;
+}
+
+.propriete-status {
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    margin-left: auto;
+}
+
+/* ============================================
+   Collapsible groups — reprend le design existant
+   ============================================ */
+.prop-collaps-group {
+    background-color: #1E1E1E;
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+}
+
+.prop-collaps-group > .box-collaps {
+    padding: 0;
+}
+
+.prop-collaps-group > .box-collaps > p {
+    font-size: 13px;
+    font-family: "Gotham Bold", sans-serif;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.prop-collaps-group > .box-collaps > .collapsible img {
+    width: 18px;
+    opacity: 0.5;
+}
+
+.prop-collaps-group > .content {
+    padding-top: 8px;
+}
+
+/* Nested collapse (group inside group) */
+.prop-collaps-nested {
+    background-color: rgba(255,255,255,0.03);
+    padding: 8px 12px;
+    margin-top: 4px;
+    border-radius: 6px;
+}
+
+.prop-collaps-nested > .box-collaps > p {
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+}
+
+.prop-collaps-nested > .box-collaps > .collapsible img {
+    width: 14px;
+}
+
+.prop-collaps-nested > .content {
+    padding-top: 6px;
+}
+
+/* ============================================
+   Ligne de propriété — compact
+   ============================================ */
+.prop-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    min-height: 24px;
+}
+
+.prop-label {
+    width: 120px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prop-control {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+/* ============================================
+   Flex pair : deux propriétés côte à côte
+   ============================================ */
+.prop-flex-pair {
+    display: flex;
+    gap: 12px;
+}
+
+.prop-flex-pair > .prop-row {
+    flex: 1;
+}
+
+/* ============================================
+   Draggable value — texte bleu interactif
+   ============================================ */
+.drag-value-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.drag-value {
+    color: #0D66D0;
+    font-size: 13px;
+    font-family: "Gotham Regular", sans-serif;
+    cursor: ew-resize;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: 2px 0;
+    border: none;
+    background: none;
+    white-space: nowrap;
+}
+
+.drag-value:hover {
+    color: #3B8EFF;
+}
+
+.drag-value-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    margin-left: 1px;
+}
+
+.drag-value-edit {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid #0D66D0;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+    font-family: "Gotham Regular", sans-serif;
+    padding: 2px 6px;
+    width: 70px;
+    outline: none;
+}
+
+/* Prevent text selection during drag */
+body.dragging {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: ew-resize !important;
+}
+
+body.dragging * {
+    cursor: ew-resize !important;
+}
+
+/* ============================================
+   Position / Array — drag values côte à côte
+   ============================================ */
+.prop-position-drag {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+/* ============================================
+   Color swatch — juste le carré
+   ============================================ */
+.prop-color-swatch-only {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.prop-color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+}
+
+.prop-color-swatch:hover {
+    border-color: rgba(255,255,255,0.5);
+}
+
+/* Input Coloris caché (off-screen mais accessible) */
+.prop-color-hidden-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    left: 12px;
+    top: 12px;
+}
+
+/* ============================================
+   Texte — wrapper + font toolbar + textarea
+   ============================================ */
+.prop-text-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* Font toolbar — barre d'outils police */
+.prop-font-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    flex-wrap: wrap;
+}
+
+/* Font select wrapper — positionnement relatif pour le dropdown */
+.prop-font-select-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.prop-font-input {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    color: rgba(255,255,255,0.7);
+    font-size: 10px;
+    font-family: "Gotham Regular", sans-serif;
+    padding: 2px 6px;
+    width: 110px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.prop-font-input:focus {
+    border-color: #0D66D0;
+    color: #fff;
+}
+
+.prop-font-input::placeholder {
+    color: rgba(255,255,255,0.3);
+}
+
+/* Dropdown custom pour les polices */
+.prop-font-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 180px;
+    max-height: 200px;
+    overflow-y: auto;
+    background: #1a1a1a;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    z-index: 100;
+    margin-top: 2px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.prop-font-dropdown-item {
+    padding: 4px 8px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prop-font-dropdown-item:hover {
+    background: rgba(13,102,208,0.3);
+    color: #fff;
+}
+
+/* Scrollbar du dropdown */
+.prop-font-dropdown::-webkit-scrollbar {
+    width: 4px;
+}
+
+.prop-font-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.prop-font-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+}
+
+.prop-font-size-drag {
+    display: inline-flex;
+    align-items: center;
+}
+
+.prop-font-size-drag .drag-value {
+    font-size: 11px;
+}
+
+.prop-font-sep {
+    width: 1px;
+    height: 14px;
+    background: rgba(255,255,255,0.12);
+    margin: 0 2px;
+    flex-shrink: 0;
+}
+
+.prop-font-badge {
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 1px 5px;
+    line-height: 1.3;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.prop-font-badge:hover {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.7);
+}
+
+.prop-font-badge.active {
+    background: rgba(13,102,208,0.2);
+    color: #0D66D0;
+    border-color: rgba(13,102,208,0.4);
+}
+
+.prop-textarea {
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    color: #fff;
+    font-family: "Gotham Regular", sans-serif;
+    font-size: 12px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.prop-textarea:focus {
+    border-color: #0D66D0;
+}
+
+.prop-textarea::placeholder {
+    color: rgba(255,255,255,0.3);
+    font-style: italic;
+}
+
+/* ============================================
+   Range slider (déclencheur)
+   ============================================ */
+.prop-range-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.prop-range {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    outline: none;
+}
+
+.prop-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #0D66D0;
+    cursor: pointer;
+    border: none;
+}
+
+.prop-range::-webkit-slider-thumb:hover {
+    background: #3B8EFF;
+}
+
+.prop-range-value {
+    font-size: 12px;
+    color: #0D66D0;
+    min-width: 24px;
+    text-align: right;
+}
+
+/* ============================================
+   Checkbox — override global label styles
+   ============================================ */
+.propriete-page .prop-checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    justify-content: flex-start;
+}
+
+/* ============================================
+   Unknown / read-only
+   ============================================ */
+.prop-unknown-value {
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    font-style: italic;
+}
+
+/* ============================================
+   Boutons Undo / Refresh — compact
+   ============================================ */
+.btn-undo,
+.btn-refresh {
+    border: 1px solid rgba(255,255,255,0.3);
+    background: transparent;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: "Gotham Regular", sans-serif;
+    font-size: 13px;
+    transition: border-color 0.2s, opacity 0.2s;
+}
+
+.btn-undo {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.btn-undo.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.btn-undo.active:hover,
+.btn-refresh:hover {
+    border-color: #fff;
+}
+
+/* ============================================
+   États : vide, erreur, chargement
+   ============================================ */
+.propriete-empty {
+    text-align: center;
+    padding: 60px 30px;
+    color: rgba(255,255,255,0.5);
+}
+
+.propriete-error {
+    text-align: center;
+    padding: 30px;
+    color: #BD0000;
+}
+
+.propriete-loading {
+    text-align: center;
+    padding: 40px 30px;
+    color: rgba(255,255,255,0.5);
+}

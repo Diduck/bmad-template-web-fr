@@ -57,6 +57,13 @@
             return stringifyValue(obj);
         };
     }
+
+    if (typeof JSON.parse !== "function") {
+        JSON.parse = function (str) {
+            if (typeof str !== "string" || str === "") return null;
+            return eval("(" + str + ")");
+        };
+    }
 })();
 
 // ============================================================================
@@ -76,6 +83,7 @@ var CONSTANTS = {
     MIN_EXPORT_WAIT_MS: 2000,
     EXPORT_STABLE_CHECKS: 3,
     RMS_SILENCE_THRESHOLD: -60,
+    AUTO_THRESHOLD_FALLBACK: -65,
     CUT_MARGIN_DEFAULT: 0.15,
     FRAME_GROUPING_THRESHOLD: 0.15
 };
@@ -258,6 +266,13 @@ function getProjectFolderPath() {
     }
 
     return "";
+}
+
+/**
+ * Obtient le chemin complet du fichier .prproj
+ */
+function getProjectFullPath() {
+    return app.project.path || "";
 }
 
 /**
@@ -520,14 +535,27 @@ function getSequenceProjectItemByName(name, parentBin) {
  * Supprime l'extension d'un nom de fichier
  */
 function removeExtension(name) {
-    var extensions = [".mov", ".MOV", ".mp4", ".MP4", ".wav"];
-
-    for (var i = 0; i < extensions.length; i++) {
-        if (name.indexOf(extensions[i]) !== -1) {
-            return name.substring(0, name.lastIndexOf("."));
-        }
+    var lastDot = name.lastIndexOf(".");
+    if (lastDot > 0) {
+        return name.substring(0, lastDot);
     }
     return name;
+}
+
+/**
+ * Extrait le nom de base et le numéro de partie d'un rush multi-parties
+ * "interview" → { baseName: "interview", partNumber: 1 }
+ * "interview-2" → { baseName: "interview", partNumber: 2 }
+ */
+function extractBaseName(clipName) {
+    var match = clipName.match(/-(\d+)$/);
+    if (match) {
+        return {
+            baseName: clipName.substring(0, clipName.length - match[0].length),
+            partNumber: parseInt(match[1], 10)
+        };
+    }
+    return { baseName: clipName, partNumber: 1 };
 }
 
 /**
@@ -983,6 +1011,36 @@ function createRushSequence(targetClip, clipName, binRush1, currentSetting) {
 }
 
 /**
+ * Ajoute un clip à la fin d'une séquence Rush_ existante (multi-parties)
+ */
+function addClipToRushSequence(targetClip, rushSequence) {
+    var videoTrack = rushSequence.videoTracks[0];
+    if (!videoTrack || videoTrack.clips.numItems === 0) {
+        return;
+    }
+
+    // Position = fin du dernier clip vidéo
+    var lastClip = videoTrack.clips[videoTrack.clips.numItems - 1];
+    var insertTime = lastClip.end.seconds;
+
+    // Insère le clip sur V1
+    videoTrack.insertClip(targetClip, insertTime);
+
+    // Scale le nouveau clip
+    var newClip = videoTrack.clips[videoTrack.clips.numItems - 1];
+    if (newClip) {
+        try {
+            var mediaInfo = getMediaInfo(targetClip);
+            if (mediaInfo) {
+                scaleClipToFill(newClip, rushSequence, mediaInfo.width, mediaInfo.height);
+            }
+        } catch (e) {
+            logMessage("Erreur scaling clip multi-partie : " + e.message);
+        }
+    }
+}
+
+/**
  * Exporte l'audio si l'option est activée
  */
 function exportAudioIfNeeded(optionAudio, rushSequence, clipName, trackClip) {
@@ -994,7 +1052,11 @@ function exportAudioIfNeeded(optionAudio, rushSequence, clipName, trackClip) {
     var audioFolder = getAudioFolderFromRushFolder(rushFolder);
 
     if (FileExists(WAVFOLDERPRESET) === "true") {
-        exportSequenceWavSilently(rushSequence, audioFolder + clipName + ".wav", WAVFOLDERPRESET);
+        var audioSubfolder = new Folder(audioFolder + "Audio");
+        if (!audioSubfolder.exists) {
+            audioSubfolder.create();
+        }
+        exportSequenceWavSilently(rushSequence, audioFolder + "Audio/" + clipName + ".wav", WAVFOLDERPRESET);
     } else {
         notif("Ajoutez un preset d'export audio WAV sous le nom 'ExportAudioWav'", "error");
     }
@@ -1015,7 +1077,7 @@ function importAudioUpgrades(suffixAudioUpgrade, binRush1) {
     var trackClip = searchSequenceByName(binRush1.children[0].name).videoTracks[0].clips[0];
     var rushFolder = getFolderPath(trackClip);
     var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
-    var audioFolder = new Folder(audioFolderBin);
+    var audioFolder = new Folder(audioFolderBin + "Audio");
 
     if (!audioFolder || !(audioFolder instanceof Folder)) {
         return;
@@ -1063,7 +1125,7 @@ function importAudioUpgrades(suffixAudioUpgrade, binRush1) {
 }
 
 /**
- * Crée le dossier audio dans le projet
+ * Crée le dossier audio 07_Audio et ses sous-dossiers (Audio, Titles, Subtitles, Brolls, Context) dans le projet
  */
 function ensureProjectAudioFolder() {
     var projetPath = getProjectFolderPath();
@@ -1071,6 +1133,17 @@ function ensureProjectAudioFolder() {
         var audioFolder = new Folder(projetPath + "07_Audio");
         if (!audioFolder.exists) {
             audioFolder.create();
+        }
+        if (!audioFolder.exists) {
+            return;
+        }
+        // SYNC: ces noms doivent correspondre aux constantes PATHS.*_SUBFOLDER dans constants.js
+        var subs = ["Audio", "Titles", "Subtitles", "Brolls", "Context"];
+        for (var i = 0; i < subs.length; i++) {
+            var sub = new Folder(projetPath + "07_Audio\\" + subs[i]);
+            if (!sub.exists) {
+                sub.create();
+            }
         }
     }
 }
@@ -1101,34 +1174,60 @@ function STEP1_EXECUTE(OptionAudio, suffixAudioUpgrade, selectedformat) {
             format = { width: 1920, height: 1080 };
         }
 
+        // Phase A : Grouper les rushes par nom de base (multi-parties)
+        var groups = {};
         for (var i = 0; i < rushBin.children.numItems; i++) {
             var clipName = removeExtension(rushBin.children[i].name);
             clipName = clipName.replace(suffixAudioUpgrade, "");
+            var info = extractBaseName(clipName);
 
-            var targetClip = searchClipByName(clipName, rushBin);
-            if (!targetClip) {
-                notif("Clip " + clipName + " introuvable.", "error");
+            if (!groups[info.baseName]) {
+                groups[info.baseName] = [];
+            }
+            groups[info.baseName].push({ clipName: clipName, partNumber: info.partNumber });
+        }
+
+        // Phase B : Traiter chaque groupe
+        for (var baseName in groups) {
+            // Skip si séquence existe déjà
+            if (searchSequenceByName(baseName)) {
                 continue;
             }
 
-            if (searchSequenceByName(clipName)) {
+            // Trier les parties par numéro
+            groups[baseName].sort(function(a, b) { return a.partNumber - b.partNumber; });
+            var parts = groups[baseName];
+
+            // Trouver le clip de base (part 1)
+            var baseClip = searchClipByName(parts[0].clipName, rushBin);
+            if (!baseClip) {
+                notif("Clip " + parts[0].clipName + " introuvable.", "error");
                 continue;
             }
 
-            // Crée la séquence principale
-            var mainSeq = createSequenceFromRush(targetClip, clipName, binRush2, format);
+            // 1. Crée la séquence principale
+            var mainSeq = createSequenceFromRush(baseClip, baseName, binRush2, format);
 
-            // Crée la séquence Rush
-            var rushResult = createRushSequence(targetClip, clipName, binRush1, mainSeq.getSettings());
+            // 2. Crée la séquence Rush avec le clip de base
+            var rushResult = createRushSequence(baseClip, baseName, binRush1, mainSeq.getSettings());
             if (!rushResult) {
                 continue;
             }
 
-            var rushItemSequence = getSequenceProjectItemByName("Rush_" + clipName, binRush1);
+            // 3. Ajouter les parties suivantes au Rush_
+            for (var j = 1; j < parts.length; j++) {
+                var partClip = searchClipByName(parts[j].clipName, rushBin);
+                if (partClip) {
+                    addClipToRushSequence(partClip, rushResult.sequence);
+                }
+            }
+
+            // 4. Imbriquer le Rush_ COMPLET dans la séquence principale
+            var rushItemSequence = getSequenceProjectItemByName("Rush_" + baseName, binRush1);
             insertNestedSequence(rushItemSequence, mainSeq);
 
-            // Export audio si nécessaire
-            exportAudioIfNeeded(OptionAudio, rushResult.sequence, clipName, rushResult.clip);
+            // 5. Export audio si nécessaire (clip de base)
+            exportAudioIfNeeded(OptionAudio, rushResult.sequence, baseName, rushResult.clip);
         }
 
         notif("Execution réussie", "success");
@@ -1310,32 +1409,44 @@ function generateSRT(jsonData, audioPath, sequenceName) {
  */
 function CreateSTR(sequence, OptionPresetStyle) {
     var sequenceBin = searchBinByName(BIN_NAMES.SEQUENCES);
+    if (!sequenceBin) {
+        throw new Error("Bin " + BIN_NAMES.SEQUENCES + " introuvable dans le projet");
+    }
+
     var binRush1 = searchBinByName(BIN_NAMES.RUSH1, sequenceBin);
+    if (!binRush1 || binRush1.children.numItems === 0) {
+        throw new Error("Bin Rush1 introuvable ou vide dans " + BIN_NAMES.SEQUENCES);
+    }
+
     var subtitleChutier = searchOrCreateBin(BIN_NAMES.SUBTITLES);
     var trashChutier = searchOrCreateBin(BIN_NAMES.TRASH);
 
-    var trackClip = searchSequenceByName(binRush1.children[0].name).videoTracks[0].clips[0];
+    var rushSeq = searchSequenceByName(binRush1.children[0].name);
+    if (!rushSeq || !rushSeq.videoTracks[0] || rushSeq.videoTracks[0].clips.numItems === 0) {
+        throw new Error("Séquence Rush introuvable ou vide : " + binRush1.children[0].name);
+    }
+    var trackClip = rushSeq.videoTracks[0].clips[0];
     if (trackClip.projectItem.isSequence() === true) {
         var nestedSeq = searchSequenceByName(trackClip.projectItem.name);
+        if (!nestedSeq || !nestedSeq.videoTracks[0] || nestedSeq.videoTracks[0].clips.numItems === 0) {
+            throw new Error("Séquence imbriquée introuvable ou vide : " + trackClip.projectItem.name);
+        }
         trackClip = nestedSeq.videoTracks[0].clips[0];
     }
 
     var rushFolder = getFolderPath(trackClip);
     var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
+    if (!audioFolderBin) {
+        throw new Error("Impossible de déterminer le dossier audio depuis le rush");
+    }
     var audioFolder = new Folder(audioFolderBin);
     var audioPath = audioFolder.fsName + "\\";
 
-    if (!audioFolder || !(audioFolder instanceof Folder)) {
-        notif("Le dossier audio est invalide ou n'existe pas", "error");
-        return;
-    }
-
-    var jsonFile = new File(audioPath + sequence.name + "SRT.json");
+    var jsonFile = new File(audioPath + "Subtitles\\" + sequence.name + "SRT.json");
     jsonFile.encoding = "UTF-8";
 
     if (!jsonFile.exists) {
-        notif("Fichier JSON introuvable : " + audioPath + sequence.name + "SRT.json", "error");
-        return;
+        throw new Error("Fichier JSON introuvable : " + audioPath + "Subtitles\\" + sequence.name + "SRT.json");
     }
 
     jsonFile.open("r");
@@ -1359,6 +1470,10 @@ function CreateSTR(sequence, OptionPresetStyle) {
     var itemSRT = getSequenceProjectItemByName(sequence.name + ".srt", subtitleChutier);
     var sequenceitem = searchSequenceByName(sequence.name);
 
+    if (!sequenceitem) {
+        throw new Error("Séquence " + sequence.name + " introuvable après import");
+    }
+
     project.activeSequence = sequenceitem;
     sequenceitem.createCaptionTrack(itemSRT, 0);
 
@@ -1370,10 +1485,68 @@ function CreateSTR(sequence, OptionPresetStyle) {
 // ============================================================================
 
 /**
+ * DEBUG: Liste toutes les propriétés du composant graphique d'un MOGRT sur la timeline
+ * Appeler depuis la console: debugMogrtProperties("2")
+ * Supprimable après diagnostic
+ */
+function debugMogrtProperties(TemplateSelection) {
+    var sequence = app.project.activeSequence;
+    if (!sequence) { return JSON.stringify({error: "Aucune séquence active"}); }
+
+    // Chercher le dernier clip sur la piste vidéo 7 (index 6)
+    var track = sequence.videoTracks[6];
+    if (!track || track.clips.numItems === 0) {
+        // Importer un MOGRT temporaire pour analyser
+        var titleTemplatePath = EXT_ROOT + "\\assets\\templates\\titles\\TITRE-" + TemplateSelection + "-H.mogrt";
+        var templateFile = new File(titleTemplatePath);
+        if (!templateFile.exists) {
+            return JSON.stringify({error: "MOGRT introuvable: " + titleTemplatePath});
+        }
+        var item = sequence.importMGT(titleTemplatePath, 0, 6, 1);
+        if (!item) {
+            return JSON.stringify({error: "Echec import MOGRT"});
+        }
+    }
+
+    // Lire le dernier clip importé
+    track = sequence.videoTracks[6];
+    var clip = track.clips[track.clips.numItems - 1];
+    var result = [];
+
+    for (var i = 0; i < clip.components.numItems; i++) {
+        var comp = clip.components[i];
+        if (comp.displayName.toLowerCase().indexOf("graphi") !== -1) {
+            for (var j = 0; j < comp.properties.numItems; j++) {
+                var prop = comp.properties[j];
+                var info = {
+                    index: j,
+                    displayName: prop.displayName,
+                    displayNameLower: prop.displayName.toLowerCase()
+                };
+                // Essayer de lire la valeur
+                try {
+                    if (prop.displayName.toLowerCase() === "color") {
+                        info.colorValue = prop.getColorValue().toString();
+                    } else {
+                        info.value = String(prop.getValue());
+                    }
+                } catch(e) {
+                    info.value = "[erreur lecture: " + e.message + "]";
+                }
+                result.push(info);
+            }
+        }
+    }
+
+    return JSON.stringify(result);
+}
+
+/**
  * Configure les propriétés d'un MOGRT (titre animé)
  */
 function setMogrtSourceText(item, time, text, index, TemplateSelection, nbr, color) {
     TemplateSelection = String(TemplateSelection);
+
     for (var i = 0; i < item.components.numItems; i++) {
         if (item.components[i].displayName.toLowerCase().indexOf("graphi") !== -1) {
             comp2 = item.components[i];
@@ -1381,24 +1554,26 @@ function setMogrtSourceText(item, time, text, index, TemplateSelection, nbr, col
             var countApparition = 0;
             var countopa = 0;
             var countPosition = 0;
+            var countColor = 0;
 
             for (var j = 0; j < comp2.properties.numItems; j++) {
                 var prop = comp2.properties[j];
                 var propNameLower = prop.displayName.toLowerCase();
 
-                // Gestion de la couleur
-                if (propNameLower === "color") {
-                    var colorargb = hexToColorArray(color);
-                    if (prop.getColorValue().toString() == hexToColorArray("#FF0000").toString()) {
-                        prop.setColorValue(colorargb[0], colorargb[1], colorargb[2], colorargb[3], 1);
-                    }
-                }
+                // ── TEMPLATE 1 ──
+                if (TemplateSelection === "1") {
 
-                // Gestion du texte
-                if (propNameLower === "text") {
-                    // Template 1 avec 2 lignes : skip la ligne 2 du modèle
-                    // On saute index 1 pour que ligne 2 du texte aille sur ligne 3 du modèle
-                    if (TemplateSelection === "1") {
+                    // Couleur : propriété "Color", placeholder #FF0000
+                    if (propNameLower === "color") {
+                        var colorargb = hexToColorArray(color);
+                        if (prop.getColorValue().toString() == hexToColorArray("#FF0000").toString()) {
+                            prop.setColorValue(colorargb[0], colorargb[1], colorargb[2], colorargb[3], 1);
+                        }
+                    }
+
+                    // Texte : propriété "Text"
+                    if (propNameLower === "text") {
+                        // 2 lignes : skip slot 1 pour que ligne 2 aille sur slot 2
                         if (nbr < 3) {
                             if (countText === 1) {
                                 if (countText === index) {
@@ -1406,24 +1581,21 @@ function setMogrtSourceText(item, time, text, index, TemplateSelection, nbr, col
                                 }
                             }
                         }
+                        if (countText === index) {
+                            prop.setValue(text, 1);
+                        }
+                        countText += 1;
                     }
 
-                    if (countText === index) {
-                        prop.setValue(text, 1);
+                    // Déclencheur apparition
+                    if (propNameLower === "déclencheur apparition") {
+                        if (countApparition === index) {
+                            prop.setValue(time, 1);
+                        }
+                        countApparition += 1;
                     }
-                    countText += 1;
-                }
 
-                // Déclencheur d'apparition
-                if (propNameLower === "déclencheur apparition") {
-                    if (countApparition === index) {
-                        prop.setValue(time, 1);
-                    }
-                    countApparition += 1;
-                }
-
-                // Gestion spécifique template 1 : masquer ligne 2 et ajuster position
-                if (TemplateSelection === "1") {
+                    // Masquer ligne 2 et ajuster position quand 2 lignes
                     if (nbr < 3) {
                         if (propNameLower === "visibility" || propNameLower === "opacity") {
                             if (countopa === 1) {
@@ -1439,6 +1611,47 @@ function setMogrtSourceText(item, time, text, index, TemplateSelection, nbr, col
                         }
                     }
                 }
+
+                // ── TEMPLATE 2 ──
+                // Structure MOGRT : 6 groupes (Premier texte, TEXTE 1, Second texte, TEXTE 2, Troisième texte, TEXTE 3)
+                // Groupes actifs : count 1 = TEXTE 1 (ligne 1), count 2 = Second texte (ligne 2), count 3 = TEXTE 2 (ligne 3)
+                // Offset +1 sur l'index pour sauter le premier groupe "Premier texte"
+                if (TemplateSelection === "2") {
+                    var adjustedIndex = index + 1;
+
+                    // Couleur : propriété "Couleur", placeholder #FFA200
+                    if (propNameLower === "couleur") {
+                        var colorargb2 = hexToColorArray(color);
+                        if (prop.getColorValue().toString() == hexToColorArray("#FFA200").toString()) {
+                            prop.setColorValue(colorargb2[0], colorargb2[1], colorargb2[2], colorargb2[3], 1);
+                        }
+                        countColor += 1;
+                    }
+
+                    // Texte : propriété "Mots"
+                    if (propNameLower === "mots") {
+                        if (countText === adjustedIndex) {
+                            prop.setValue(text, 1);
+                        }
+                        countText += 1;
+                    }
+
+                    // Apparition
+                    if (propNameLower === "apparition") {
+                        if (countApparition === adjustedIndex) {
+                            prop.setValue(time, 1);
+                        }
+                        countApparition += 1;
+                    }
+
+                    // Opacité : masquer le groupe "TEXTE 2" (countOpa 3) quand 2 lignes
+                    if (propNameLower === "opacité") {
+                        if (nbr < 3 && countopa === 3) {
+                            prop.setValue(0, 1);
+                        }
+                        countopa += 1;
+                    }
+                }
             }
         }
     }
@@ -1449,19 +1662,34 @@ function setMogrtSourceText(item, time, text, index, TemplateSelection, nbr, col
  */
 function CreateTitles(sequence, TemplateSelection, titleColor) {
     var projetPath = getProjectFolderPath();
-    sequence = searchSequenceByName(sequence.name);
+    if (!projetPath) {
+        throw new Error("Chemin du projet introuvable");
+    }
+    ensureProjectAudioFolder();
+
+    var seqName = sequence.name;
+    sequence = searchSequenceByName(seqName);
+    if (!sequence) {
+        throw new Error("Séquence " + seqName + " introuvable");
+    }
     project.activeSequence = sequence;
     var qeSeq = qe.project.getActiveSequence();
+    if (!qeSeq) {
+        throw new Error("QE séquence introuvable pour " + seqName);
+    }
 
     notif("Ajout des titres dans la timeline pour " + sequence.name, "warning");
 
-    var titlesFile = new File(projetPath + "07_Audio\\" + sequence.name + "_titles.json");
+    var titlesPath = projetPath + "07_Audio\\Titles\\" + sequence.name + "_titles.json";
+    var titlesFile = new File(titlesPath);
     if (!titlesFile.exists) {
-        notif("Fichier titres introuvable pour " + sequence.name, "error");
-        return;
+        throw new Error("Fichier titres introuvable : " + titlesPath);
     }
 
-    var value = readFile(projetPath + "07_Audio\\" + sequence.name + "_titles.json");
+    var value = readFile(titlesPath);
+    if (!value || value === "") {
+        throw new Error("Fichier titres vide : " + titlesPath);
+    }
     value = JSON.parse(value);
 
     // Ajoute des pistes vidéo si nécessaire
@@ -1536,6 +1764,173 @@ function CreateTitles(sequence, TemplateSelection, titleColor) {
 }
 
 // ============================================================================
+// AJOUT DE TITRE PONCTUEL (AJOUTER ICI)
+// ============================================================================
+
+/**
+ * Retourne la position du curseur (CTI) sur la séquence active
+ */
+function GetCTIPosition() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({error: "Aucune séquence active"});
+        }
+        var position = seq.getPlayerPosition();
+        var seconds = ticksToSeconds(position.ticks, 3);
+        return JSON.stringify({
+            position: seconds,
+            sequenceName: seq.name
+        });
+    } catch (e) {
+        return JSON.stringify({error: e.toString()});
+    }
+}
+
+/**
+ * Lit le fichier SRT.json et retourne les sous-titres dans une fenêtre temporelle
+ */
+function GetSubtitlesAtTime(sequenceName, timeSeconds, windowSeconds) {
+    try {
+        var projetPath = getProjectFolderPath();
+        var srtPath = projetPath + "07_Audio\\Subtitles\\" + sequenceName + "SRT.json";
+        var srtFile = new File(srtPath);
+        if (!srtFile.exists) {
+            return JSON.stringify({error: "Fichier SRT introuvable pour " + sequenceName});
+        }
+        var content = readFile(srtPath);
+        if (content === null) {
+            return JSON.stringify({error: "Impossible de lire le fichier SRT : " + srtPath});
+        }
+        var subtitles = JSON.parse(content);
+        var minTime = timeSeconds - windowSeconds;
+        var maxTime = timeSeconds + windowSeconds;
+        var result = [];
+        for (var i = 0; i < subtitles.length; i++) {
+            var sub = subtitles[i];
+            if (sub.end >= minTime && sub.start <= maxTime) {
+                result.push({start: sub.start, end: sub.end, text: sub.text, words: sub.words || []});
+            }
+        }
+        return JSON.stringify({subtitles: result});
+    } catch (e) {
+        return JSON.stringify({error: e.toString()});
+    }
+}
+
+/**
+ * Importe un MOGRT unique à la position donnée avec gestion de collision inter-pistes
+ * titleDataStr : JSON string [{"mots":"group1","start":1.5},{"mots":"group2","start":2.1}]
+ */
+function AddSingleTitle(sequenceName, titleDataStr, templateSelection, titleColor) {
+    try {
+        var seq = searchSequenceByName(sequenceName);
+        if (!seq) {
+            return JSON.stringify({error: "Séquence introuvable: " + sequenceName});
+        }
+
+        app.project.activeSequence = seq;
+        var qeSeq = qe.project.getActiveSequence();
+
+        var titleData = JSON.parse(titleDataStr);
+        var nbr = titleData.length;
+        if (nbr < 2) {
+            return JSON.stringify({error: "Le titre doit avoir au moins 2 lignes"});
+        }
+
+        // Vérifier le template MOGRT
+        var titleTemplatePath = EXT_ROOT + "\\assets\\templates\\titles\\TITRE-" + templateSelection + "-H.mogrt";
+        var templateFile = new File(titleTemplatePath);
+        if (!templateFile.exists) {
+            return JSON.stringify({error: "Fichier MOGRT introuvable: TITRE-" + templateSelection + "-H.mogrt"});
+        }
+
+        var color = titleColor || "#ff4949ff";
+        var startTime = titleData[0]["start"] - 0.2;
+        var startTicks = secondsToTicks(startTime);
+
+        // Calculer la durée réelle du titre (comme CreateTitles)
+        var lastStart = titleData[titleData.length - 1]["start"];
+        var titleDuration = (lastStart - titleData[0]["start"] + 1.2);
+        var durTicks = secondsToTicks(titleDuration.toString());
+
+        // S'assurer que les pistes cibles V7 et V8 (indices 6 et 7) existent
+        var baseTrack = 6;
+        while (seq.videoTracks.numTracks < baseTrack + 2) {
+            qeSeq.addTracks(1, seq.videoTracks.numTracks - 1, 0);
+        }
+
+        // ===== ÉTAPE 1: Import sur piste staging (forcément vide) =====
+        // Créer une nouvelle piste tout en haut (garantie vide, aucun conflit)
+        var stagingTrackIndex = seq.videoTracks.numTracks;
+        qeSeq.addTracks(1, seq.videoTracks.numTracks - 1, 0);
+
+        var stagingItem = seq.importMGT(titleTemplatePath, startTicks, stagingTrackIndex, 1);
+        if (!stagingItem) {
+            return JSON.stringify({error: "Échec de l'import du MOGRT"});
+        }
+
+        // Ajuster la durée sur la piste staging (safe, aucun conflit)
+        var stagingEnd = new Time();
+        stagingEnd.ticks = String(Number(stagingItem.start.ticks) + Number(durTicks));
+        stagingItem.end = stagingEnd;
+
+        // Configurer le MOGRT sur la piste staging
+        for (var j = 0; j < titleData.length; j++) {
+            var time = (titleData[j]["start"]) - (titleData[0]["start"]);
+            setMogrtSourceText(stagingItem, time * 100 - 20, titleData[j]["mots"], j, templateSelection, nbr, color);
+        }
+
+        // ===== ÉTAPE 2: Déplacer vers piste cible V7 ou V8 si libre =====
+        var targetTrack = -1;
+        for (var t = baseTrack; t <= baseTrack + 1; t++) {
+            var track = seq.videoTracks[t];
+            var hasCollision = false;
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var clipStartSec = ticksToSeconds(clip.start.ticks, 3);
+                var clipEndSec = ticksToSeconds(clip.end.ticks, 3);
+                if (clipEndSec > startTime && clipStartSec < startTime + titleDuration) {
+                    hasCollision = true;
+                    break;
+                }
+            }
+            if (!hasCollision) {
+                targetTrack = t;
+                break;
+            }
+        }
+
+        if (targetTrack !== -1) {
+            // Ré-importer sur la piste cible (vérifiée libre)
+            var targetItem = seq.importMGT(titleTemplatePath, startTicks, targetTrack, 1);
+            if (targetItem) {
+                // Ajuster la durée sur la piste cible
+                var targetEnd = new Time();
+                targetEnd.ticks = String(Number(targetItem.start.ticks) + Number(durTicks));
+                targetItem.end = targetEnd;
+
+                // Configurer le MOGRT sur la piste cible
+                for (var k = 0; k < titleData.length; k++) {
+                    var time2 = (titleData[k]["start"]) - (titleData[0]["start"]);
+                    setMogrtSourceText(targetItem, time2 * 100 - 20, titleData[k]["mots"], k, templateSelection, nbr, color);
+                }
+
+                // Supprimer le clip de la piste staging
+                stagingItem.remove(false, false);
+
+                return JSON.stringify({success: true, track: targetTrack + 1});
+            }
+        }
+
+        // Si aucune piste cible libre, le titre reste sur la piste staging
+        return JSON.stringify({success: true, track: stagingTrackIndex + 1});
+    } catch (e) {
+        return JSON.stringify({error: e.toString()});
+    }
+}
+
+// ============================================================================
 // ANALYSE AUDIO POUR DÉCOUPE AUTOMATIQUE
 // ============================================================================
 
@@ -1575,9 +1970,34 @@ function runFFmpegAnalysis(audioPath, sequenceName) {
 }
 
 /**
- * Parse le fichier de résultat FFmpeg
+ * Calcule le seuil auto silence/parole : moyenne entre -90 dB et la médiane RMS.
+ * Exclut les -inf (stockés en -99).
  */
-function parseFFmpegResults(audioPath, sequenceName, rmsThreshold, time) {
+function calculateRmsMedian(AllValueWav) {
+    var numericValues = [];
+    for (var i = 0; i < AllValueWav.length; i++) {
+        var val = AllValueWav[i].debit;
+        if (val !== -99 && !isNaN(val)) {
+            numericValues.push(val);
+        }
+    }
+    if (numericValues.length === 0) {
+        return CONSTANTS.AUTO_THRESHOLD_FALLBACK;
+    }
+    numericValues.sort(function(a, b) { return a - b; });
+
+    var mid = Math.floor(numericValues.length / 2);
+    var median = (numericValues.length % 2 === 0)
+        ? (numericValues[mid - 1] + numericValues[mid]) / 2
+        : numericValues[mid];
+
+    return (-90 + median) / 2 + 1.5;
+}
+
+/**
+ * Parse le fichier de résultat FFmpeg (parsing uniquement, sans filtrage)
+ */
+function parseFFmpegResults(audioPath, sequenceName, time) {
     var file = new File(audioPath + sequenceName + '.txt');
     if (!file.exists) {
         return null;
@@ -1586,7 +2006,6 @@ function parseFFmpegResults(audioPath, sequenceName, rmsThreshold, time) {
     $.sleep((time / 84 + 3) * 1000);
     file.open("r");
 
-    var lowRmsTimes = [];
     var AllValueWav = [];
     var currentTime = null;
 
@@ -1605,15 +2024,24 @@ function parseFFmpegResults(audioPath, sequenceName, rmsThreshold, time) {
             var rms = rmsStr === "-inf" ? -99 : parseFloat(rmsStr);
 
             AllValueWav.push({ 'time': currentTime, "debit": rms });
-
-            if (rms < rmsThreshold && currentTime !== null) {
-                lowRmsTimes.push(currentTime);
-            }
         }
     }
 
     file.close();
-    return { lowRmsTimes: lowRmsTimes, AllValueWav: AllValueWav };
+    return { AllValueWav: AllValueWav };
+}
+
+/**
+ * Filtre les zones de silence à partir des valeurs RMS et d'un seuil
+ */
+function filterSilenceZones(AllValueWav, threshold) {
+    var lowRmsTimes = [];
+    for (var i = 0; i < AllValueWav.length; i++) {
+        if (AllValueWav[i].debit < threshold && AllValueWav[i].time !== null) {
+            lowRmsTimes.push(AllValueWav[i].time);
+        }
+    }
+    return lowRmsTimes;
 }
 
 /**
@@ -1699,7 +2127,7 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
             };
         }
 
-        var parseResult = parseFFmpegResults(audioPath, sequence.name, rmsThreshold, time);
+        var parseResult = parseFFmpegResults(audioPath, sequence.name, time);
         if (!parseResult) {
             return {
                 "Message": "Fichier " + audioPath + sequence.name + ".txt introuvable",
@@ -1707,14 +2135,25 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
             };
         }
 
-        var CutZones = groupCutZones(parseResult.lowRmsTimes, margin);
+        // Auto-détection du seuil si null ou non-numérique
+        var effectiveThreshold = rmsThreshold;
+        var autoThreshold = null;
+        if (rmsThreshold === null || rmsThreshold === undefined || isNaN(rmsThreshold)) {
+            autoThreshold = calculateRmsMedian(parseResult.AllValueWav);
+            autoThreshold = Math.round(autoThreshold * 10) / 10;
+            effectiveThreshold = autoThreshold;
+        }
+
+        var lowRmsTimes = filterSilenceZones(parseResult.AllValueWav, effectiveThreshold);
+        var CutZones = groupCutZones(lowRmsTimes, margin);
 
         return {
             "Message": "Analyse réussie",
             "Value": CutZones,
             "AllValueWav": parseResult.AllValueWav,
             "fileName": sequence.name,
-            "duration": ticksToTime(sequence.end)
+            "duration": ticksToTime(sequence.end),
+            "autoThreshold": autoThreshold
         };
     }
 }
@@ -1722,6 +2161,45 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
 // ============================================================================
 // STEP 2 - TRAITEMENT AVANCÉ
 // ============================================================================
+
+/**
+ * Retourne toutes les séquences du projet avec nom et durée (FONCTION PUBLIQUE)
+ * @returns {string} JSON array [{name, duration}] — durée en secondes
+ */
+function GetAllProjectSequences() {
+    var sequences = new Array();
+    var sequenceBin = searchBinByName(BIN_NAMES.SEQUENCES);
+    if (!sequenceBin) {
+        return JSON.stringify(sequences);
+    }
+
+    var binRush2 = searchBinByName(BIN_NAMES.RUSH2, sequenceBin);
+    if (!binRush2 || !binRush2.children) {
+        return JSON.stringify(sequences);
+    }
+
+    var seqMap = {};
+    var allSeqs = project.sequences;
+    for (var i = 0; i < allSeqs.numSequences; i++) {
+        seqMap[allSeqs[i].name] = allSeqs[i];
+    }
+
+    for (var i = 0; i < binRush2.children.numItems; i++) {
+        var item = binRush2.children[i];
+        if (item.isSequence()) {
+            var seq = seqMap[item.name];
+            if (seq) {
+                var durationSec = Number(seq.end) / CONSTANTS.TICKS_PER_SECOND;
+                sequences.push({
+                    name: seq.name,
+                    duration: durationSec
+                });
+            }
+        }
+    }
+
+    return JSON.stringify(sequences);
+}
 
 /**
  * Récupère les séquences sélectionnées (FONCTION PUBLIQUE)
@@ -1843,15 +2321,25 @@ function CreateZoom(sequence) {
 /**
  * Attend que le log de transcription soit complet et charge le JSON
  */
-function waitForLogAndLoadJSON(audioPath, goal, file) {
+function waitForLogAndLoadJSON(audioPath, goal, file, outputDir) {
     var audioDir = audioPath.substring(0, audioPath.lastIndexOf("\\"));
     var logFile = new File(audioDir + "\\stdout.log");
+    var jsonDir = outputDir || audioDir;
 
     var jsonFile;
-    if (goal === "BROLL") {
-        jsonFile = new File(audioPath.replace(/\.\w+$/, ".json"));
+    if (outputDir) {
+        // Si outputDir fourni, chercher le JSON dedans avec le basename du fichier
+        if (goal === "BROLL") {
+            jsonFile = new File(jsonDir + "\\" + file + ".json");
+        } else {
+            jsonFile = new File(jsonDir + "\\" + file + "SRT.json");
+        }
     } else {
-        jsonFile = new File(audioPath.replace(/\.\w+$/, "SRT.json"));
+        if (goal === "BROLL") {
+            jsonFile = new File(audioPath.replace(/\.\w+$/, ".json"));
+        } else {
+            jsonFile = new File(audioPath.replace(/\.\w+$/, "SRT.json"));
+        }
     }
 
     var maxWait = CONSTANTS.TRANSCRIPTION_TIMEOUT_MS;
@@ -1943,7 +2431,7 @@ function waitForLogAndLoadJSON(audioPath, goal, file) {
 /**
  * Lance la transcription Python (FONCTION PUBLIQUE)
  */
-function runPythonTranscription(extensionPath, audioPath, goal, file) {
+function runPythonTranscription(extensionPath, audioPath, goal, file, charLimit, modelName, outputDir) {
     audioPath = audioPath + file + ".wav";
     var pythonScript = extensionPath + "\\scripts\\transcription\\transcribe.py";
     var batFilePath = extensionPath + "\\scripts\\transcription\\run_transcription.bat";
@@ -1955,13 +2443,29 @@ function runPythonTranscription(extensionPath, audioPath, goal, file) {
         logFile.remove();
     }
 
+    // Creer le outputDir si fourni
+    if (outputDir) {
+        var outFolder = new Folder(outputDir);
+        if (!outFolder.exists) {
+            outFolder.create();
+        }
+    }
+
+    // Retirer le backslash final pour éviter que \" casse le guillemet dans le .bat
+    if (outputDir && outputDir.charAt(outputDir.length - 1) === "\\") {
+        outputDir = outputDir.substring(0, outputDir.length - 1);
+    }
+
     var ffmpegDir = EXT_ROOT + "\\bin";
+    var charLimitArg = charLimit ? ' "' + charLimit + '"' : ' ""';
+    var modelArg = modelName ? ' "' + modelName + '"' : ' ""';
+    var outputDirArg = outputDir ? ' "' + outputDir + '"' : '';
 
     var command =
         '@echo off\n' +
         'setlocal\n' +
         'set "PATH=' + ffmpegDir + ';%PATH%"\n' +
-        'python "' + pythonScript + '" "' + audioPath + '" "' + goal + '" > "' + logPath + '" 2>&1\n' +
+        'python "' + pythonScript + '" "' + audioPath + '" "' + goal + '"' + charLimitArg + modelArg + outputDirArg + ' > "' + logPath + '" 2>&1\n' +
         'endlocal\n';
 
     var batFile = new File(batFilePath);
@@ -1987,7 +2491,7 @@ function runPythonTranscription(extensionPath, audioPath, goal, file) {
 
             $.sleep(1000);
 
-            var transcriptionData = waitForLogAndLoadJSON(audioPath, goal, file);
+            var transcriptionData = waitForLogAndLoadJSON(audioPath, goal, file, outputDir);
             if (transcriptionData) {
                 notif("Transcription terminée", "success");
                 return JSON.stringify(transcriptionData);
@@ -2504,6 +3008,1010 @@ function checkFileInFolder(folderPath, fileName) {
         if (files[i].name.toLowerCase() === target) return true;
     }
     return false;
+}
+
+// ============================================================================
+// CLAUDE CLI — COMMANDE BACKGROUND
+// ============================================================================
+
+/**
+ * Lance une commande Claude CLI en arrière-plan (non-bloquant).
+ * Crée un .bat + .vbs, le .vbs lance en mode async (False = n'attend pas).
+ * Un fichier .done est créé quand la commande est terminée.
+ * @param {string} promptPath - Chemin du fichier contenant le prompt
+ * @param {string} outputPath - Chemin du fichier de sortie JSON
+ * @returns {string} JSON {launched: true, donePath: "..."} ou {error: "..."}
+ */
+function runClaudeBackground(promptPath, outputPath) {
+    try {
+        var donePath = outputPath + ".done";
+
+        // Nettoyer les anciens fichiers
+        var oldOut = new File(outputPath);
+        var oldDone = new File(donePath);
+        if (oldOut.exists) oldOut.remove();
+        if (oldDone.exists) oldDone.remove();
+
+        // Construire la commande : lire le prompt et l'envoyer à claude -p
+        // set CLAUDECODE= désactive la protection anti-nesting
+        // CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 : Lottie JSON riche (5-8 layers) dépasse les 32K tokens par défaut
+        // --model sonnet --effort low : Sonnet 4.6 avec thinking minimal (sans effort low = 5-10min de thinking)
+        // --tools "" : désactive tool_use inutile pour génération texte (réduit thinking + init)
+        // stream-json --verbose --include-partial-messages : NDJSON avec stream_event text deltas
+        var cmd = 'set "CLAUDECODE=" && set "CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000" && claude -p --model sonnet --effort low --tools "" --max-turns 1 --output-format stream-json --verbose --include-partial-messages < "' + promptPath + '"';
+
+        // Créer le .bat (F1: new Date().getTime() au lieu de Date.now() — ES3)
+        var tempDir = Folder.temp.fsName;
+        var ts = new Date().getTime();
+        var bat = new File(tempDir + "\\claude_lottie_" + ts + ".bat");
+        bat.encoding = "UTF-8";
+        bat.open("w");
+        bat.write("@echo off\r\n");
+        bat.write("chcp 65001 > nul\r\n");
+        bat.write(cmd + ' > "' + outputPath + '" 2>"' + outputPath + '.err"\r\n');
+        bat.write('echo done > "' + donePath + '"\r\n');
+        bat.close();
+
+        // Créer le .vbs — sh.Run avec False = async (ne bloque pas)
+        var vbs = new File(tempDir + "\\claude_lottie_" + ts + ".vbs");
+        vbs.encoding = "UTF-8";
+        vbs.open("w");
+        vbs.write('Set sh = CreateObject("WScript.Shell")\r\n');
+        vbs.write('sh.Run "cmd.exe /c ""' + bat.fsName.replace(/"/g, '""') + '""", 0, False\r\n');
+        vbs.close();
+
+        // Lancer en arrière-plan
+        vbs.execute();
+
+        return JSON.stringify({
+            launched: true,
+            donePath: donePath,
+            batPath: bat.fsName,
+            vbsPath: vbs.fsName
+        });
+    } catch (e) {
+        return JSON.stringify({error: "Erreur lancement Claude : " + e.message});
+    }
+}
+
+/**
+ * Vérifie si un fichier .done existe (polling depuis JS)
+ * @param {string} donePath - Chemin du fichier .done
+ * @returns {string} "true" ou "false"
+ */
+function checkClaudeDone(donePath) {
+    var f = new File(donePath);
+    return f.exists ? "true" : "false";
+}
+
+/**
+ * Lit le contenu d'un fichier texte (pour lire la sortie Claude)
+ * @param {string} filePath - Chemin du fichier
+ * @returns {string} Contenu du fichier ou chaîne vide
+ */
+function readTextFile(filePath) {
+    var f = new File(filePath);
+    if (!f.exists) return "";
+    f.encoding = "UTF-8";
+    f.open("r");
+    var content = f.read();
+    f.close();
+    return content;
+}
+
+/**
+ * Tue les processus Claude CLI orphelins (en cas de timeout).
+ * Utilise taskkill via WScript.Shell pour tuer les processus "claude" en arrière-plan.
+ * @returns {string} "ok" ou message d'erreur
+ */
+function killClaudeProcess() {
+    try {
+        var sh = new ActiveXObject("WScript.Shell");
+        // /F = force, /IM = image name, /T = kill child processes too
+        // stderr redirigé vers nul pour éviter les erreurs si aucun process trouvé
+        sh.Run('cmd.exe /c taskkill /F /IM claude.exe /T 2>nul', 0, true);
+        return "ok";
+    } catch (e) {
+        return "error: " + e.message;
+    }
+}
+
+/**
+ * Nettoie les fichiers temporaires Claude (bat, vbs, done, err)
+ * @param {string} outputPath - Chemin du fichier de sortie (base pour .done, .err)
+ * @param {string} batPath - Chemin du .bat
+ * @param {string} vbsPath - Chemin du .vbs
+ */
+function cleanupClaudeFiles(outputPath, batPath, vbsPath) {
+    try {
+        var files = [
+            new File(outputPath),
+            new File(outputPath + ".done"),
+            new File(outputPath + ".err"),
+            new File(batPath),
+            new File(vbsPath)
+        ];
+        for (var i = 0; i < files.length; i++) {
+            if (files[i].exists) files[i].remove();
+        }
+    } catch (e) {
+        // Ignorer les erreurs de nettoyage
+    }
+    return "ok";
+}
+
+/**
+ * Vérifie si Claude CLI est authentifié en lançant une commande test.
+ * Lance une commande rapide (--help) et vérifie qu'elle ne retourne pas d'erreur d'auth.
+ * @returns {string} JSON {authenticated: true|false, error: "..."} ou {error: "..."}
+ */
+function checkClaudeAuth() {
+    try {
+        var tempDir = Folder.temp.fsName;
+        var ts = new Date().getTime();
+        var outputPath = tempDir + "\\claude_auth_check_" + ts + ".txt";
+        var errPath = outputPath + ".err";
+
+        // Commande test rapide : juste demander l'aide (pas de génération)
+        var cmd = 'set "CLAUDECODE=" && claude --help';
+
+        // Créer un .bat pour la commande test
+        var bat = new File(tempDir + "\\claude_auth_check_" + ts + ".bat");
+        bat.encoding = "UTF-8";
+        bat.open("w");
+        bat.write("@echo off\r\n");
+        bat.write("chcp 65001 > nul\r\n");
+        bat.write(cmd + ' > "' + outputPath + '" 2>"' + errPath + '"\r\n');
+        bat.close();
+
+        // Exécuter de manière synchrone (attendre le résultat)
+        var sh = new ActiveXObject("WScript.Shell");
+        sh.Run('cmd.exe /c "' + bat.fsName + '"', 0, true); // true = wait
+
+        // Lire le fichier d'erreur
+        var errFile = new File(errPath);
+        var errContent = "";
+        if (errFile.exists) {
+            errFile.encoding = "UTF-8";
+            errFile.open("r");
+            errContent = errFile.read();
+            errFile.close();
+        }
+
+        // Nettoyer
+        try { bat.remove(); } catch (e) {}
+        try { new File(outputPath).remove(); } catch (e) {}
+        try { errFile.remove(); } catch (e) {}
+
+        // Détecter les patterns d'erreur d'authentification
+        if (errContent) {
+            var lower = errContent.toLowerCase();
+            var authPatterns = [
+                'not logged in',
+                'authentication required',
+                'authentication failed',
+                'session expired',
+                'invalid token',
+                'unauthorized',
+                'login required',
+                'please log in',
+                'you are not authenticated',
+                'auth error'
+            ];
+
+            for (var i = 0; i < authPatterns.length; i++) {
+                if (lower.indexOf(authPatterns[i]) !== -1) {
+                    return JSON.stringify({
+                        authenticated: false,
+                        error: errContent.slice(0, 500)
+                    });
+                }
+            }
+        }
+
+        // Si pas d'erreur d'auth détectée, considérer comme authentifié
+        return JSON.stringify({ authenticated: true });
+
+    } catch (e) {
+        return JSON.stringify({error: "Erreur vérification auth Claude : " + e.message});
+    }
+}
+
+// ============================================================================
+// MOTION DESIGN — LOTTIE OVERLAY
+// ============================================================================
+
+/**
+ * Importe un .mov overlay Lottie dans Premiere et le place sur la timeline
+ * @param {string} sequenceName - Nom de la séquence cible
+ * @param {string} movPath - Chemin du fichier .mov
+ * @param {number} positionSeconds - Position en secondes sur la timeline
+ * @returns {string} JSON {success, track} ou {error}
+ */
+function ImportLottieOverlay(sequenceName, movPath, positionSeconds) {
+    var previousSequence = null;
+    try {
+        // 1. Trouver la séquence
+        var sequence = searchSequenceByName(sequenceName);
+        if (!sequence) {
+            return JSON.stringify({error: "Séquence introuvable : " + sequenceName});
+        }
+
+        // Activer la séquence cible pour que QE DOM et insertClip opèrent dessus (pattern createMarkers)
+        previousSequence = project.activeSequence;
+        project.activeSequence = sequence;
+
+        // 2. Vérifier que le fichier existe
+        var movFile = new File(movPath);
+        if (!movFile.exists) {
+            return JSON.stringify({error: "Fichier .mov introuvable : " + movPath});
+        }
+
+        // 3. Importer le .mov dans le projet
+        var importSuccess = app.project.importFiles([movPath]);
+        if (!importSuccess) {
+            return JSON.stringify({error: "Échec de l'import du fichier .mov"});
+        }
+
+        // 4. Trouver le clip importé (cherche dans le bin racine + sous-bins)
+        var movFileName = movFile.name;
+        var movBaseName = movFileName.replace(".mov", "");
+        var importedClip = null;
+
+        // Recherche récursive dans tous les bins
+        function findClipRecursive(parentItem, targetName, targetBase) {
+            for (var i = parentItem.children.numItems - 1; i >= 0; i--) {
+                var child = parentItem.children[i];
+                if (child.name === targetName || child.name === targetBase) {
+                    return child;
+                }
+                // Chercher dans les sous-bins (type 2 = bin)
+                if (child.type === 2 && child.children) {
+                    var found = findClipRecursive(child, targetName, targetBase);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        importedClip = findClipRecursive(project.rootItem, movFileName, movBaseName);
+
+        if (!importedClip) {
+            return JSON.stringify({error: "Clip importé introuvable dans le projet : " + movFileName});
+        }
+
+        // 5. Créer/trouver le bin 01_Vault > Motion Design et y déplacer le clip
+        var vaultBin = searchOrCreateBin(BIN_NAMES.VAULT);
+        var motionBin = searchOrCreateBin("Motion Design", vaultBin);
+        importedClip.moveBin(motionBin);
+
+        // 6. Trouver la première piste vide >= V8 (index 7)
+        var startIndex = 7;
+        var maxSearch = 5;
+        var emptyIndex = -1;
+
+        for (var t = startIndex; t < startIndex + maxSearch; t++) {
+            // Créer la piste si nécessaire
+            if (t >= sequence.videoTracks.numTracks) {
+                try {
+                    var qeSeq = qe.project.getActiveSequence();
+                    if (qeSeq) {
+                        qeSeq.addTracks(1, sequence.videoTracks.numTracks, 0);
+                    }
+                } catch (qeErr) {
+                    return JSON.stringify({error: "Impossible de créer la piste V" + (t+1) + " — QE DOM non disponible"});
+                }
+            }
+
+            if (t < sequence.videoTracks.numTracks) {
+                var track = sequence.videoTracks[t];
+                // Vérifier si la piste est vide à la position du curseur
+                var hasClipAtPosition = false;
+                var insertTicks = Number(secondsToTicks(positionSeconds));
+                var durationTicks = Number(secondsToTicks(3)); // 3 secondes
+
+                for (var c = 0; c < track.clips.numItems; c++) {
+                    var clip = track.clips[c];
+                    var clipStart = Number(clip.start.ticks);
+                    var clipEnd = Number(clip.end.ticks);
+                    // Chevauchement ?
+                    if (clipStart < (insertTicks + durationTicks) && clipEnd > insertTicks) {
+                        hasClipAtPosition = true;
+                        break;
+                    }
+                }
+
+                if (!hasClipAtPosition) {
+                    emptyIndex = t;
+                    break;
+                }
+            }
+        }
+
+        if (emptyIndex === -1) {
+            return JSON.stringify({error: "Aucune piste vidéo vide trouvée (V8 à V12)"});
+        }
+
+        // 7. Insérer le clip sur la piste
+        sequence.videoTracks[emptyIndex].insertClip(importedClip, secondsToTicks(positionSeconds));
+
+        return JSON.stringify({success: true, track: emptyIndex + 1});
+    } catch (e) {
+        return JSON.stringify({error: e.toString()});
+    } finally {
+        // Restaurer la séquence active précédente (tous chemins de sortie)
+        if (previousSequence) {
+            try { project.activeSequence = previousSequence; } catch(restoreErr) {
+                logMessage("ImportLottieOverlay: échec restauration séquence active — " + restoreErr.toString());
+            }
+        }
+    }
+}
+
+/**
+ * Supprime tous les clips des pistes V8+ (motion design) dans une séquence
+ * @param {string} sequenceName - Nom de la séquence
+ * @returns {string} JSON { removed: number } ou { error: string }
+ */
+function ClearMotionDesignClips(sequenceName) {
+    var previousSequence = null;
+    try {
+        var sequence = searchSequenceByName(sequenceName);
+        if (!sequence) {
+            return JSON.stringify({error: "Séquence introuvable : " + sequenceName});
+        }
+
+        // Activer la séquence cible (pattern createMarkers)
+        previousSequence = project.activeSequence;
+        project.activeSequence = sequence;
+
+        var removed = 0;
+        var startTrack = 7; // V8 (index 7)
+
+        for (var t = startTrack; t < sequence.videoTracks.numTracks; t++) {
+            var track = sequence.videoTracks[t];
+            // Supprimer de la fin vers le début pour ne pas décaler les indices
+            for (var c = track.clips.numItems - 1; c >= 0; c--) {
+                track.clips[c].remove(false, false);
+                removed++;
+            }
+        }
+
+        return JSON.stringify({removed: removed});
+    } catch (e) {
+        return JSON.stringify({error: e.toString()});
+    } finally {
+        // Restaurer la séquence active précédente (tous chemins de sortie)
+        if (previousSequence) {
+            try { project.activeSequence = previousSequence; } catch(restoreErr) {
+                logMessage("ClearMotionDesignClips: échec restauration séquence active — " + restoreErr.toString());
+            }
+        }
+    }
+}
+
+// ============================================================================
+// SMART CUT
+// ============================================================================
+
+function GetActiveSequenceInfo() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "Aucune sequence active" });
+        }
+        var result = {
+            name: seq.name,
+            duration: seq.end.seconds,
+            sequenceId: seq.sequenceID
+        };
+        return JSON.stringify(result);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Recherche recursive d'un project item par nom (type 1 = clip/sequence)
+ */
+function findProjectItemByName(parentItem, name) {
+    for (var i = 0; i < parentItem.children.numItems; i++) {
+        var child = parentItem.children[i];
+        if (child.name === name && child.type === 1) {
+            return child;
+        }
+        if (child.type === 2 && child.children) {
+            var found = findProjectItemByName(child, name);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+/**
+ * Cree une sequence Smart Cut par cut de la source imbriquee aux timecodes specifies
+ * @param {string} name - Nom de la nouvelle sequence (ex: SHORT1)
+ * @param {string} inPointSeconds - Point d'entree en secondes
+ * @param {string} outPointSeconds - Point de sortie en secondes
+ * @param {string} sourceSequenceName - Nom de la sequence source
+ * @returns {string} JSON {success, name} ou {error}
+ */
+function CreateSmartCutSequence(name, inPointSeconds, outPointSeconds, sourceSequenceName) {
+    try {
+        // 1. Trouver le project item de la sequence source
+        var sourceProjectItem = findProjectItemByName(project.rootItem, sourceSequenceName);
+        if (!sourceProjectItem) {
+            return JSON.stringify({ error: "Project item '" + sourceSequenceName + "' introuvable" });
+        }
+
+        // 2. Trouver/creer le bin 00_Sequences/Rush2
+        var sequencesBin = searchOrCreateBin(BIN_NAMES.SEQUENCES);
+        var rush2Bin = searchOrCreateBin(BIN_NAMES.RUSH2, sequencesBin);
+
+        // 3. Creer la sequence (herite des parametres de la source)
+        var newSeq = project.createNewSequenceFromClips(name, sourceProjectItem, rush2Bin);
+        if (!newSeq) {
+            return JSON.stringify({ error: "Echec creation sequence '" + name + "'" });
+        }
+
+        // 4. Supprimer les clips placeholder (video + audio)
+        try {
+            if (newSeq.videoTracks[0].clips.numItems > 0) newSeq.videoTracks[0].clips[0].remove(0, 0);
+        } catch (e) {}
+        try {
+            if (newSeq.audioTracks[0].clips.numItems > 0) newSeq.audioTracks[0].clips[0].remove(0, 0);
+        } catch (e) {}
+
+        // 5. Sauvegarder les points In/Out originaux du source
+        var savedIn = sourceProjectItem.getInPoint();
+        var savedOut = sourceProjectItem.getOutPoint();
+
+        // 6. Definir les points du segment desire (en ticks)
+        sourceProjectItem.setInPoint(secondsToTicks(parseFloat(inPointSeconds)), 4);
+        sourceProjectItem.setOutPoint(secondsToTicks(parseFloat(outPointSeconds)), 4);
+
+        // 7. Inserer la source comme clip imbrique (respecte les In/Out)
+        insertNestedSequence(sourceProjectItem, newSeq);
+
+        // 8. Restaurer les points originaux
+        try {
+            sourceProjectItem.setInPoint(savedIn, 4);
+            sourceProjectItem.setOutPoint(savedOut, 4);
+        } catch (e) {}
+
+        return JSON.stringify({ success: true, name: name });
+    } catch (e) {
+        // Restaurer les points en cas d'erreur
+        try {
+            sourceProjectItem.setInPoint(savedIn, 4);
+            sourceProjectItem.setOutPoint(savedOut, 4);
+        } catch (restoreErr) {}
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Supprime les sequences Smart Cut du projet (undo)
+ * @param {string} sequenceNamesJSON - JSON array des noms de sequences a supprimer
+ * @returns {string} JSON {success, deleted, errors} ou {error}
+ */
+function UndoSmartCut(sequenceNamesJSON) {
+    try {
+        var names = JSON.parse(sequenceNamesJSON);
+        var deleted = [];
+        var errors = [];
+
+        for (var i = 0; i < names.length; i++) {
+            var seqName = names[i];
+            var item = findProjectItemByName(project.rootItem, seqName);
+            if (item) {
+                item.remove();
+                deleted.push(seqName);
+            } else {
+                errors.push(seqName + " introuvable");
+            }
+        }
+
+        return JSON.stringify({ success: true, deleted: deleted, errors: errors });
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Retourne la liste des noms de sequences existantes (pour eviter les collisions)
+ * @returns {string} JSON array de noms ou {error}
+ */
+function GetExistingSequenceNames() {
+    try {
+        var names = [];
+        for (var i = 0; i < project.sequences.numSequences; i++) {
+            names.push(project.sequences[i].name);
+        }
+        return JSON.stringify(names);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// ============================================================================
+// FILE SYSTEM HELPERS (pour motiondesign.js)
+// ============================================================================
+
+/**
+ * Crée un dossier (récursivement si nécessaire)
+ * @param {string} dirPath - Chemin du dossier à créer
+ * @returns {string} "true" ou "false"
+ */
+function CreateDirectory(dirPath) {
+    var folder = new Folder(dirPath);
+    if (!folder.exists) {
+        folder.create();
+    }
+    return folder.exists.toString();
+}
+
+/**
+ * Copie un fichier (binaire-safe)
+ * @param {string} src - Chemin source
+ * @param {string} dst - Chemin destination
+ * @returns {string} "true" ou "false"
+ */
+function CopyFileTo(src, dst) {
+    var srcFile = new File(src);
+    if (!srcFile.exists) return "false";
+    return srcFile.copy(dst).toString();
+}
+
+/**
+ * Supprime un fichier
+ * @param {string} filePath - Chemin du fichier
+ * @returns {string} "true"
+ */
+function DeleteFileAt(filePath) {
+    var f = new File(filePath);
+    if (f.exists) f.remove();
+    return "true";
+}
+
+/**
+ * Liste les fichiers d'un dossier
+ * @param {string} dirPath - Chemin du dossier
+ * @returns {string} JSON array de noms de fichiers
+ */
+function ListDirectory(dirPath) {
+    var folder = new Folder(dirPath);
+    if (!folder.exists) return "[]";
+    var files = folder.getFiles();
+    var names = [];
+    for (var i = 0; i < files.length; i++) {
+        names.push(files[i].name);
+    }
+    return JSON.stringify(names);
+}
+
+/**
+ * Supprime un dossier vide
+ * @param {string} dirPath - Chemin du dossier
+ * @returns {string} "true"
+ */
+function DeleteFolder(dirPath) {
+    var folder = new Folder(dirPath);
+    if (folder.exists) folder.remove();
+    return "true";
+}
+
+// ============================================================================
+// PROPRIÉTÉS MOGRT — Édition multi-clips
+// ============================================================================
+
+/**
+ * PoC : teste getSelection() sur la séquence active
+ * @returns {string} JSON avec les résultats du test
+ */
+function testGetSelection() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return JSON.stringify({ error: "Pas de séquence active" });
+
+        var selection;
+        try {
+            selection = seq.getSelection();
+        } catch (e) {
+            return JSON.stringify({ error: "getSelection not available", fallback: true, message: e.message });
+        }
+
+        if (!selection) {
+            return JSON.stringify({ error: "getSelection returned null", fallback: true });
+        }
+
+        var info = { numItems: selection.numItems, items: [] };
+        for (var i = 0; i < selection.numItems && i < 3; i++) {
+            var clip = selection[i];
+            var item = { name: clip.name, startTicks: String(clip.start.ticks) };
+            try { item.componentsCount = clip.components.numItems; } catch (e2) { item.componentsCount = -1; }
+            info.items.push(item);
+        }
+        return JSON.stringify(info);
+    } catch (e) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+/**
+ * Récupère les clips MOGRT sélectionnés et leurs propriétés
+ * Utilise getSelection() avec fallback sur isSelected()
+ * @returns {string} JSON { clips, templateMatch, clipCount } ou { error }
+ */
+function getSelectedMogrtProperties() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return JSON.stringify({ error: "Pas de séquence active" });
+
+        // Obtenir la sélection
+        var selectedClips = [];
+        var useGetSelection = true;
+
+        try {
+            var selection = seq.getSelection();
+            if (selection && typeof selection.numItems !== "undefined") {
+                for (var si = 0; si < selection.numItems; si++) {
+                    selectedClips.push({ clip: selection[si], trackIndex: -1 });
+                }
+            } else {
+                useGetSelection = false;
+            }
+        } catch (e) {
+            useGetSelection = false;
+        }
+
+        // Fallback : itérer tous les tracks et filtrer par isSelected()
+        if (!useGetSelection || selectedClips.length === 0) {
+            selectedClips = [];
+            for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+                var track = seq.videoTracks[t];
+                for (var c = 0; c < track.clips.numItems; c++) {
+                    var cl = track.clips[c];
+                    try {
+                        if (cl.isSelected()) {
+                            selectedClips.push({ clip: cl, trackIndex: t });
+                        }
+                    } catch (e2) { /* skip */ }
+                }
+            }
+        }
+
+        if (selectedClips.length === 0) {
+            return JSON.stringify({ clips: [], templateMatch: true, clipCount: 0 });
+        }
+
+        // Si getSelection était utilisé, retrouver trackIndex pour chaque clip
+        if (useGetSelection) {
+            for (var fi = 0; fi < selectedClips.length; fi++) {
+                var found = false;
+                var fClip = selectedClips[fi].clip;
+                var fTicks = String(fClip.start.ticks);
+                for (var ft = 0; ft < seq.videoTracks.numTracks && !found; ft++) {
+                    var fTrack = seq.videoTracks[ft];
+                    for (var fc = 0; fc < fTrack.clips.numItems && !found; fc++) {
+                        if (String(fTrack.clips[fc].start.ticks) === fTicks && fTrack.clips[fc].name === fClip.name) {
+                            selectedClips[fi].trackIndex = ft;
+                            found = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        var clips = [];
+        var matchNames = [];
+
+        for (var i = 0; i < selectedClips.length; i++) {
+            var clip = selectedClips[i].clip;
+            var tIdx = selectedClips[i].trackIndex;
+            var graphComp = null;
+            var graphMatchName = "";
+
+            // Trouver le composant Graphics
+            for (var ci = 0; ci < clip.components.numItems; ci++) {
+                var comp = clip.components[ci];
+                if (comp.displayName.toLowerCase().indexOf("graphi") !== -1) {
+                    graphComp = comp;
+                    try { graphMatchName = comp.matchName; } catch (e3) { graphMatchName = comp.displayName; }
+                    break;
+                }
+            }
+
+            if (!graphComp) continue; // Pas un MOGRT, skip
+
+            matchNames.push(graphMatchName);
+
+            var properties = [];
+            for (var j = 0; j < graphComp.properties.numItems; j++) {
+                var prop = graphComp.properties[j];
+                var propInfo = {
+                    propIndex: j,
+                    displayName: prop.displayName,
+                    type: "unknown",
+                    value: null
+                };
+
+                // Détection type par displayName d'abord
+                var dnLower = prop.displayName.toLowerCase();
+                if (dnLower.indexOf("color") !== -1 || dnLower.indexOf("couleur") !== -1) {
+                    propInfo.type = "color";
+                    try {
+                        var cv = prop.getColorValue();
+                        propInfo.value = String(cv[0]) + "," + String(cv[1]) + "," + String(cv[2]) + "," + String(cv[3]);
+                    } catch (e4) {
+                        propInfo.type = "unknown";
+                        propInfo.value = null;
+                    }
+                } else {
+                    // F10: Essayer getColorValue() en fallback pour les couleurs non détectées par nom
+                    var detectedAsColor = false;
+                    try {
+                        var cvFallback = prop.getColorValue();
+                        if (cvFallback && typeof cvFallback.length === "number" && cvFallback.length >= 4) {
+                            propInfo.type = "color";
+                            propInfo.value = String(cvFallback[0]) + "," + String(cvFallback[1]) + "," + String(cvFallback[2]) + "," + String(cvFallback[3]);
+                            detectedAsColor = true;
+                        }
+                    } catch (eColor) {
+                        // Pas une couleur, continuer avec getValue()
+                    }
+
+                    if (!detectedAsColor) {
+                        try {
+                            var val = prop.getValue();
+                            var vType = typeof val;
+                            if (vType === "string") {
+                                // Détecter texte riche MOGRT (JSON avec textEditValue)
+                                var isRichText = false;
+                                try {
+                                    var parsed = eval("(" + val + ")");
+                                    if (parsed && typeof parsed === "object" && typeof parsed.textEditValue !== "undefined") {
+                                        propInfo.type = "text";
+                                        propInfo.value = val;
+                                        propInfo.isRichText = true;
+                                        isRichText = true;
+                                    }
+                                } catch (eRich) { /* pas du JSON, continuer */ }
+
+                                if (!isRichText) {
+                                    // Détecter groupe/dossier (GUIDs séparés par ;)
+                                    var isGroup = false;
+                                    if (val.length > 36 && val.indexOf(";") !== -1 && val.indexOf("-") !== -1) {
+                                        // Vérifier pattern GUID : 8-4-4-4-12 hexadécimaux
+                                        var guidPart = val.split(";")[0];
+                                        if (guidPart.length >= 36 && guidPart.split("-").length === 5) {
+                                            propInfo.type = "group";
+                                            propInfo.value = val;
+                                            isGroup = true;
+                                        }
+                                    }
+                                    if (!isGroup) {
+                                        propInfo.type = "text";
+                                        propInfo.value = val;
+                                    }
+                                }
+                            } else if (vType === "number") {
+                                propInfo.type = "number";
+                                propInfo.value = val;
+                            } else if (vType === "boolean") {
+                                propInfo.type = "boolean";
+                                propInfo.value = val;
+                            } else if (vType === "object" && val !== null && typeof val.length === "number") {
+                                // Détecter position (array + nom contient "position")
+                                if (dnLower.indexOf("position") !== -1) {
+                                    propInfo.type = "position";
+                                } else {
+                                    propInfo.type = "array";
+                                }
+                                var arrParts = [];
+                                for (var ai = 0; ai < val.length; ai++) {
+                                    arrParts.push(String(val[ai]));
+                                }
+                                propInfo.value = arrParts.join(",");
+                            } else {
+                                propInfo.type = "text";
+                                propInfo.value = String(val);
+                            }
+                        } catch (e5) {
+                            propInfo.type = "unknown";
+                            propInfo.value = null;
+                        }
+                    }
+                }
+
+                properties.push(propInfo);
+            }
+
+            clips.push({
+                selectionIndex: i,
+                name: clip.name,
+                trackIndex: tIdx,
+                startTicks: String(clip.start.ticks),
+                matchName: graphMatchName,
+                properties: properties
+            });
+        }
+
+        // Vérifier si tous les clips ont la même structure de propriétés
+        // (matchName seul ne suffit pas car tous les MOGRTs ont le même matchName)
+        var templateMatch = true;
+        if (clips.length > 1) {
+            // Construire un fingerprint basé sur le nombre et les noms des propriétés
+            var refFingerprint = "";
+            for (var fp0 = 0; fp0 < clips[0].properties.length; fp0++) {
+                refFingerprint += clips[0].properties[fp0].displayName + "|";
+            }
+            for (var mi = 1; mi < clips.length; mi++) {
+                var curFingerprint = "";
+                for (var fp1 = 0; fp1 < clips[mi].properties.length; fp1++) {
+                    curFingerprint += clips[mi].properties[fp1].displayName + "|";
+                }
+                if (curFingerprint !== refFingerprint) {
+                    templateMatch = false;
+                    break;
+                }
+            }
+        }
+
+        var seqW = 1920;
+        var seqH = 1080;
+        try { seqW = parseInt(seq.frameSizeHorizontal, 10) || 1920; } catch (ew) {}
+        try { seqH = parseInt(seq.frameSizeVertical, 10) || 1080; } catch (eh) {}
+
+        return JSON.stringify({ clips: clips, templateMatch: templateMatch, clipCount: clips.length, sequenceWidth: seqW, sequenceHeight: seqH });
+    } catch (e) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+/**
+ * Applique un batch de modifications sur les propriétés MOGRT
+ * @param {string} changesJsonStr - JSON stringifié des changements
+ * @returns {string} JSON { success, applied } ou { error }
+ */
+function setMogrtPropertiesBatch(changesJsonStr) {
+    try {
+        var changes = eval("(" + changesJsonStr + ")");
+        var seq = app.project.activeSequence;
+        if (!seq) return JSON.stringify({ error: "Pas de séquence active" });
+
+        var applied = 0;
+
+        for (var i = 0; i < changes.length; i++) {
+            var change = changes[i];
+
+            // Retrouver le clip par trackIndex + startTicks
+            var targetClip = null;
+            var trackIdx = change.trackIndex;
+            var targetTicks = change.startTicks;
+
+            if (trackIdx >= 0 && trackIdx < seq.videoTracks.numTracks) {
+                var track = seq.videoTracks[trackIdx];
+                for (var c = 0; c < track.clips.numItems; c++) {
+                    if (String(track.clips[c].start.ticks) === targetTicks) {
+                        targetClip = track.clips[c];
+                        break;
+                    }
+                }
+            }
+
+            // Fallback : chercher dans tous les tracks
+            if (!targetClip) {
+                for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+                    var tr = seq.videoTracks[t];
+                    for (var tc = 0; tc < tr.clips.numItems; tc++) {
+                        if (String(tr.clips[tc].start.ticks) === targetTicks) {
+                            targetClip = tr.clips[tc];
+                            break;
+                        }
+                    }
+                    if (targetClip) break;
+                }
+            }
+
+            if (!targetClip) continue;
+
+            // Trouver le composant Graphics
+            var graphComp = null;
+            for (var gi = 0; gi < targetClip.components.numItems; gi++) {
+                if (targetClip.components[gi].displayName.toLowerCase().indexOf("graphi") !== -1) {
+                    graphComp = targetClip.components[gi];
+                    break;
+                }
+            }
+            if (!graphComp) continue;
+
+            var prop = graphComp.properties[change.propIndex];
+            if (!prop) continue;
+
+            try {
+                if (change.isColor) {
+                    var parts = change.value;
+                    prop.setColorValue(parts[0], parts[1], parts[2], parts[3], 1);
+                } else if (change.isRichText) {
+                    // Texte riche MOGRT : lire l'objet JSON actuel, remplacer textEditValue + font props
+                    var currentVal = prop.getValue();
+                    var richObj = null;
+                    try { richObj = eval("(" + currentVal + ")"); } catch (eRich) {}
+
+                    // Si getValue() retourne du texte brut (ex: plugin a fait setValue(text,1)),
+                    // construire un objet riche from scratch
+                    if (!richObj || typeof richObj !== "object") {
+                        richObj = {
+                            capPropFontEdit: true,
+                            textEditValue: (typeof currentVal === "string") ? currentVal : "",
+                            fontEditValue: ["Arial"],
+                            fontSizeEditValue: [24],
+                            fontFSBoldValue: [false],
+                            fontFSItalicValue: [false],
+                            fontFSAllCapsValue: [false],
+                            fontFSSmallCapsValue: [false]
+                        };
+                    }
+
+                    // Mettre à jour le texte si fourni
+                    if (change.value !== undefined && change.value !== null) {
+                        richObj.textEditValue = change.value;
+                    }
+                    // Appliquer les changements de police si présents
+                    if (change.fontChanges) {
+                        var fc = change.fontChanges;
+                        if (fc.fontName !== undefined) {
+                            if (!richObj.fontEditValue) richObj.fontEditValue = [];
+                            richObj.fontEditValue[0] = fc.fontName;
+                        }
+                        if (fc.fontSize !== undefined) {
+                            if (!richObj.fontSizeEditValue) richObj.fontSizeEditValue = [];
+                            richObj.fontSizeEditValue[0] = fc.fontSize;
+                        }
+                        if (fc.bold !== undefined) {
+                            if (!richObj.fontFSBoldValue) richObj.fontFSBoldValue = [];
+                            richObj.fontFSBoldValue[0] = fc.bold;
+                        }
+                        if (fc.italic !== undefined) {
+                            if (!richObj.fontFSItalicValue) richObj.fontFSItalicValue = [];
+                            richObj.fontFSItalicValue[0] = fc.italic;
+                        }
+                        if (fc.allCaps !== undefined) {
+                            if (!richObj.fontFSAllCapsValue) richObj.fontFSAllCapsValue = [];
+                            richObj.fontFSAllCapsValue[0] = fc.allCaps;
+                        }
+                        if (fc.smallCaps !== undefined) {
+                            if (!richObj.fontFSSmallCapsValue) richObj.fontFSSmallCapsValue = [];
+                            richObj.fontFSSmallCapsValue[0] = fc.smallCaps;
+                        }
+                    }
+                    prop.setValue(JSON.stringify(richObj), 1);
+                } else if (change.isPosition) {
+                    // Position en pixels → convertir en normalisé 0-1
+                    var posVals = change.value;
+                    var normVals = [];
+                    var sW = change.seqWidth || 1920;
+                    var sH = change.seqHeight || 1080;
+                    for (var pi = 0; pi < posVals.length; pi++) {
+                        if (pi === 0) normVals.push(posVals[pi] / sW);
+                        else if (pi === 1) normVals.push(posVals[pi] / sH);
+                        else normVals.push(posVals[pi]);
+                    }
+                    prop.setValue(normVals, 1);
+                } else {
+                    prop.setValue(change.value, 1);
+                }
+                applied++;
+            } catch (e2) {
+                // Skip erreur individuelle, continuer le batch
+            }
+        }
+
+        return JSON.stringify({ success: true, applied: applied });
+    } catch (e) {
+        return JSON.stringify({ error: e.message });
+    }
 }
 
 // ============================================================================

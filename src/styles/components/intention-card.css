@@ -1,0 +1,58 @@
+/* Grille d'intentions 2x2 */
+.intention-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Card intention - état default */
+.intention-card {
+  background-color: #1E1E1E;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 150ms ease-in-out, background-color 150ms ease-in-out;
+  outline: none;
+}
+
+/* État hover */
+.intention-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* État selected */
+.intention-card--selected {
+  border-color: #0D66D0;
+  background-color: rgba(13, 102, 208, 0.12);
+}
+
+.intention-card--selected:hover {
+  border-color: #0D66D0;
+}
+
+/* État disabled */
+.intention-card--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Focus visible (accessibilité) */
+.intention-card:focus-visible {
+  outline: 2px solid #0D66D0;
+  outline-offset: 2px;
+}
+
+/* Contenu de la card */
+.intention-card__label {
+  color: #FFFFFF;
+  font-family: "Gotham Bold", sans-serif;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.intention-card__description {
+  color: rgba(255, 255, 255, 0.70);
+  font-family: "Gotham Regular", sans-serif;
+  font-size: 12px;
+}

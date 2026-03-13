@@ -12,6 +12,21 @@
     width: 100%;
 }
 
+/* Options B-roll — espacement et lisibilité */
+.OptionBroll .deep-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.OptionBroll .deep-content label {
+    font-size: 15px;
+}
+
+.OptionBroll .avatar-textarea {
+    min-height: 96px;
+}
+
 
 .imgTemplate{
     width: 100%;
@@ -28,6 +43,22 @@
     border-radius: 20px;
 }
 
+.add-title-here-btn {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.title-bounds-container {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    width: 100%;
+}
+.title-bound-input {
+    flex: 1;
+    resize: none;
+    min-height: 32px;
+}
 
 .form-b-roll {
     gap: 20px !important;

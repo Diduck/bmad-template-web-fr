@@ -8,6 +8,7 @@
     <script src="../scripts/components/collaps.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
     <script type="module" src="../scripts/main.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mdbassit/Coloris@latest/dist/coloris.min.css"/>
     <link rel="stylesheet" href="../styles/main.css" />
@@ -17,6 +18,8 @@
     <link rel="stylesheet" href="../styles/components/loader.css" />
     <link rel="stylesheet" href="../styles/components/notification.css" />
     <link rel="stylesheet" href="../styles/components/colorPicker.css" />
+    <link rel="stylesheet" href="../styles/components/sequence-selector.css" />
+    <link rel="stylesheet" href="../styles/components/status-bar.css" />
   </head>
   <body>
     <div id="loading-screen">
@@ -25,15 +28,24 @@
 		
     <header>
       <div class="step-nav">
-        <a href="./index.html"
-          ><div class="step"><p>Création</p></div></a
-        >
-        <a href="#"
-          ><div class="step current-step"><p>Montage</p></div></a
-        >
-        <a href="./export.html"
-          ><div class="step"><p>Exportation</p></div></a
-        >
+        <a href="./index.html"><div class="step"><p>Création</p></div></a>
+        <a href="./smartcut.html"><div class="step"><p>Smart Cut</p></div></a>
+        <a href="#"><div class="step current-step"><p>Montage</p></div></a>
+        <a href="./propriete.html"><div class="step"><p>Propriété</p></div></a>
+        <a href="./export.html"><div class="step"><p>Exportation</p></div></a>
+      </div>
+      <div class="header-actions">
+        <div class="header-icon-wrapper" id="seqSelectorToggle">
+          <button class="header-icon" aria-label="Sélection des séquences"
+                  aria-expanded="false" aria-controls="seqSelectorPopup">
+            <img src="../../assets/icons/sequences.svg" alt="">
+          </button>
+          <div id="seqSelectorPopup" class="seq-selector-popup" style="display: none;">
+          </div>
+        </div>
+        <a href="./settings.html" class="header-icon" aria-label="Paramètres">
+          <img src="../../assets/icons/settings.svg" alt="">
+        </a>
       </div>
     </header>
 
@@ -109,22 +121,25 @@
                 <div class="checkmark"></div>
               </label>
             </div>
+
+            <div class="option-content">
+              <label for="OptionMotion"
+                ><p>Ajout de Motion</p>
+                <input
+                  type="checkbox"
+                  name="OptionMotion"
+                  id="OptionMotion"
+                  class="checkbox"
+                />
+                <div class="checkmark"></div>
+              </label>
+            </div>
           </div>
 
           <button type="button" class="button-blue" id="STEP2_EXECUTE">
             Exécuter
           </button>
 
-          <div class="space"></div>
-
-          <div class="b-roll-content">
-            <p>Ajout de B-roll</p>
-            <p class="desc brolldesc">Exécuter seulement les Brolls</p>
-
-            <button class="button-blue createBroll" id="createBrolls">
-              Création B-rolls
-            </button>
-          </div>
         </form>
       </div>
 
@@ -137,19 +152,16 @@
             </button>
           </div>
           <div class="content">
-            <p class="desc">API OpenAI nécessaires pour les B-rolls.</p>
             <div class="deep-content">
-              <form action="" class="form-b-roll">
-                <label for="tokenOpenAI">
-                  <p>Token OpenAI</p>
-                  <input
-                    type="text"
-                    name="tokenOpenAI"
-                    class="box"
-                    id="TokenOpenAI"
-                  />
-                </label>
-              </form>
+              <label>Cible / Avatar client</label>
+              <div class="avatar-input-wrapper">
+                <textarea id="BrollAvatarTarget" class="box avatar-textarea"
+                          placeholder="Ex: Homme 30 ans, entrepreneur tech, passionné d'IA..."
+                          rows="4"></textarea>
+                <button type="button" class="avatar-clear-btn" id="avatarClearBtn"
+                        aria-label="Vider le champ" title="Vider">&#10005;</button>
+              </div>
+              <div class="avatar-presets" id="avatarPresets"></div>
 
               <div class="bar-horizontal" style="display: none"></div>
 
@@ -201,25 +213,23 @@
             </button>
           </div>
           <div class="content">
-            <p class="desc">Pour importer tous les styles des sous-titres</p>
             <div class="deep-content">
               <form action="" class="form-b-roll">
-                <label
-                  for="PresetStyle"
-                  style="
-                    flex-direction: column;
-                    align-items: flex-start;
-                    gap: 20px;
-                  "
-                >
-                  <p>Chemin d'accès vers : '.prtextstyle'</p>
+                <label>Caractères max par ligne</label>
+                <div class="char-limit-wrapper">
                   <input
-                    type="text"
-                    name="PresetStyle"
+                    type="number"
+                    name="SubtitleCharLimit"
                     class="box"
-                    id="OptionPresetStyle"
+                    placeholder="19"
+                    id="SubtitleCharLimit"
+                    min="10"
+                    max="80"
+                    step="1"
                   />
-                </label>
+                  <button type="button" class="reset-btn" id="charLimitReset"
+                          aria-label="Réinitialiser à 19" title="Réinitialiser">&#8634;</button>
+                </div>
               </form>
             </div>
           </div>
@@ -253,7 +263,7 @@
                       type="number"
                       name="limiteCuts"
                       class="box"
-                      placeholder="-60 (db)"
+                      placeholder="Auto (db)"
                       id="LimiteCuts"
                     />
                   </label>
@@ -298,20 +308,45 @@
               </div>
 
               <div class="imgTemplate"></div>
+              <button type="button" class="button-blue add-title-here-btn" id="AddTitleHere">
+                Ajouter ici
+              </button>
+              <div class="title-bounds-container">
+                <textarea id="TitleBoundStart" class="box title-bound-input" placeholder="Début..." rows="1"></textarea>
+                <textarea id="TitleBoundEnd" class="box title-bound-input" placeholder="Fin..." rows="1"></textarea>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="block-collaps">
-          <div class="box-collaps selectedSequence">
-            <p>Sélection</p>
-            <select name="sequenceSelection" id="sequenceSelection" class="box">
-              <option value="selectedSequence">Séquence sélectionnée</option>
-              <option value="allSequences">Toutes les séquences</option>
-            </select>
+        <div class="block-collaps OptionMotionCollaps">
+          <div class="box-collaps">
+            <p>Options Motion Design</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content">
+            <div class="deep-content">
+              <div class="motion-selection-container">
+                <input type="text" id="MotionColorPicker" class="color-picker-square"
+                       data-coloris value="#ffffffff" />
+              </div>
+              <button type="button" class="button-blue add-motion-here-btn" id="AddMotionHere">
+                Ajouter ici
+              </button>
+            </div>
           </div>
         </div>
+
       </div>
     </section>
+
+    <div id="statusBar" class="status-bar">
+      <span id="statusBarText" class="status-bar__text">1 séquence active</span>
+    </div>
+
+    <div id="lottie-render-container" style="position:absolute;left:-9999px;width:1000px;height:1000px;"></div>
+    <canvas id="lottie-export-canvas" width="1000" height="1000" style="display:none;"></canvas>
   </body>
 </html>

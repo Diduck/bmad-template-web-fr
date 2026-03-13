@@ -1,0 +1,1 @@
+Identifie les temps forts, revelations et moments charnieres. Cherche : annonces importantes, turning points, conclusions majeures, revelations inattendues, prises de conscience, climax emotionnels.

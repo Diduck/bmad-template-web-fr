@@ -1,0 +1,92 @@
+/* Smart Cut Page Layout */
+.phase-config,
+.phase-streaming,
+.phase-review {
+  display: flex;
+  padding: 60px;
+  gap: 50px;
+  min-width: 650px;
+}
+
+.smartcut-left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 35%;
+  flex-shrink: 0;
+}
+
+.smartcut-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 65%;
+}
+
+/* Bouton Lancer */
+.smartcut-left .button-blue {
+  margin-top: 10px;
+  align-self: flex-start;
+}
+
+.smartcut-left .button-blue:disabled,
+.smartcut-left .button-blue[aria-disabled="true"] {
+  background-color: #6B6B6B;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.smartcut-left .button-blue:disabled:hover,
+.smartcut-left .button-blue[aria-disabled="true"]:hover {
+  transform: none;
+}
+
+/* Placeholder résultats */
+.results-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1E1E1E;
+  border-radius: 8px;
+  padding: 60px 20px;
+  min-height: 200px;
+}
+
+.results-placeholder .desc {
+  text-align: center;
+}
+
+/* UndoBanner — notification persistante post-creation */
+.undo-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #1E1E1E;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 100;
+}
+
+/* Textarea prompt personnalise */
+.custom-prompt-textarea {
+  resize: vertical;
+  min-height: 60px;
+  max-height: 150px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.custom-prompt-textarea:focus {
+  border-color: #4E9BF5;
+  outline: 1px solid #4E9BF5;
+}
+
+.undo-banner__message {
+  color: rgba(255, 255, 255, 0.70);
+  font-family: "Gotham Regular", sans-serif;
+  font-size: 12px;
+}

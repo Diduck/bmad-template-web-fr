@@ -10,6 +10,8 @@
 		<link rel="stylesheet" href="../styles/main.css">
 		<link rel="stylesheet" href="../styles/pages/montage.css">
 		<link rel="stylesheet" href="../styles/components/notification.css">
+		<link rel="stylesheet" href="../styles/components/sequence-selector.css">
+		<link rel="stylesheet" href="../styles/components/status-bar.css">
 	<body>
 		<div id="loading-screen">
 
@@ -18,8 +20,23 @@
 		<header>
 			<div class="step-nav">
 				<a href="./index.html"><div class="step"><p>Création</p></div></a>
+				<a href="./smartcut.html"><div class="step"><p>Smart Cut</p></div></a>
 				<a href="./montage.html"><div class="step"><p>Montage</p></div></a>
+				<a href="./propriete.html"><div class="step"><p>Propriété</p></div></a>
 				<a href="#"><div class="step current-step"><p>Exportation</p></div></a>
+			</div>
+			<div class="header-actions">
+				<div class="header-icon-wrapper" id="seqSelectorToggle">
+					<button class="header-icon" aria-label="Sélection des séquences"
+							aria-expanded="false" aria-controls="seqSelectorPopup">
+						<img src="../../assets/icons/sequences.svg" alt="">
+					</button>
+					<div id="seqSelectorPopup" class="seq-selector-popup" style="display: none;">
+					</div>
+				</div>
+				<a href="./settings.html" class="header-icon" aria-label="Paramètres">
+					<img src="../../assets/icons/settings.svg" alt="">
+				</a>
 			</div>
 		</header>
 
@@ -64,29 +81,12 @@
 
 			</div>
 
-
-
-			<!-- <div class="side side-right">
-
-				<div class="block-collaps OptionNewVersionCollaps">
-					<div class="box-collaps">
-						<p>Versions</p>
-						<button class="collapsible"><img src="../../assets/images/arrow.png" alt=""></button>
-					</div>
-					<div class="content">
-						<p class="desc">Permet de ne pas supprimer les anciennes versions de 9:16 et 1:1 après une nouvelle tentative</p>
-						<div class="deep-content">
-							<form action="" class="form-b-roll">
-								<label for="NewVersion">
-									<p>Ma version :</p>
-									<input type="text" name="NewVersion" class="box" placeholder="V1" id="NewVersion">
-								</label>
-							</form>
-						</div>
-					</div>
-				</div> -->
+			<div class="side side-right">
 			</div>
 		</section>
 
+	<div id="statusBar" class="status-bar">
+		<span id="statusBarText" class="status-bar__text">1 séquence active</span>
+	</div>
 	</body>
 </html>

@@ -1,181 +1,187 @@
-# Analyse de l'arbre source - Productivity Extension
+# Productivity Extension - Analyse de l'arbre source
 
-> Documentation générée le 2026-02-24 | Scan exhaustif
+> Scan exhaustif | Mise à jour : 2026-03-05
 
 ---
 
-## Arbre source annoté
+## Arbre source complet annoté
 
 ```
 Productivity/                           # Racine de l'extension CEP
+├── CSXS/
+│   └── manifest.xml                    # Déclaration CEP (ID, hôte, CSP, taille panel)
 │
-├── CSXS/                              # Configuration Adobe CEP
-│   └── manifest.xml                   # ★ Manifeste extension (ID, hôte, CSP, UI)
-│
-├── src/                               # ★ Code source principal
+├── src/                                # === CODE SOURCE PRINCIPAL ===
+│   ├── jsx/
+│   │   └── Premiere.jsx                # [POINT D'ENTRÉE BACKEND] ~3900 lignes ExtendScript ES3
+│   │                                   # Toutes les opérations Premiere Pro (séquences, clips, audio, export)
 │   │
-│   ├── jsx/                           # Couche ExtendScript (Premiere Pro API)
-│   │   └── Premiere.jsx               # ★ API Premiere (~2000 lignes)
-│   │                                  #   - Conversion temps (ticks ↔ secondes)
-│   │                                  #   - Navigation projet (bins, séquences, clips)
-│   │                                  #   - I/O fichiers (UTF-8)
-│   │                                  #   - Création workflow (chutiers)
-│   │                                  #   - Step 1 (séquences depuis rushes)
-│   │                                  #   - Export audio (AME integration)
-│   │                                  #   - Cuts (QE setInPoint/setOutPoint/extract)
-│   │                                  #   - Sous-titres (SRT, caption tracks)
-│   │                                  #   - Titres animés (MOGRT, couleurs, textes)
-│   │                                  #   - Analyse audio (FFmpeg RMS)
-│   │                                  #   - Transcription (Python via VBS)
-│   │                                  #   - Système d'événements (CSXSEvent)
+│   ├── pages/                          # === PAGES HTML (multi-page SPA) ===
+│   │   ├── auth.html                   # [POINT D'ENTRÉE UI] Authentification OTP
+│   │   ├── index.html                  # Étape 1 : Création de séquences et chutiers
+│   │   ├── smartcut.html               # Module Smart Cut (analyse IA + création shorts)
+│   │   ├── montage.html                # Étape 2 : Montage IA (titres, sous-titres, B-rolls, motion)
+│   │   ├── propriete.html              # Éditeur de propriétés MOGRT multi-clips
+│   │   ├── settings.html               # Paramètres (clé API, dépendances)
+│   │   └── export.html                 # Étape 3 : Export multi-format
 │   │
-│   ├── pages/                         # Pages HTML du panneau CEP
-│   │   ├── auth.html                  # ★ Point d'entrée (MainPath dans manifest)
-│   │   │                              #   Authentification OTP
-│   │   ├── index.html                 # Step 1: Création séquences
-│   │   │                              #   Format, audio, workflow
-│   │   ├── montage.html               # ★ Step 2: Montage IA (page la plus complexe)
-│   │   │                              #   5 options: cuts, zoom, sous-titres, titres, B-rolls
-│   │   │                              #   5 sections collapsibles de configuration
-│   │   └── export.html                # Step 3: Export multi-format
-│   │                                  #   3 formats: 9:16, 1:1, 16:9
+│   ├── scripts/                        # === LOGIQUE JAVASCRIPT ===
+│   │   ├── main.js                     # [POINT D'ENTRÉE JS] ~1150 lignes, orchestration app
+│   │   │
+│   │   ├── api/                        # --- Clients IA ---
+│   │   │   ├── openai.js              # Client OpenAI REST+SSE (streaming, retry, batch)
+│   │   │   └── claude.js              # Client Claude CLI (bat+vbs+poll, NDJSON parsing)
+│   │   │
+│   │   ├── services/                   # --- Services métier ---
+│   │   │   ├── titles.js              # Génération de titres (OpenAI/Claude → MOGRT)
+│   │   │   ├── subtitles.js           # Transcription + sous-titres (Whisper → SRT → captions)
+│   │   │   ├── brolls.js             # Analyse B-rolls (IA → marqueurs → timeline)
+│   │   │   ├── smartcut.js           # Smart Cut (streaming JSONL → séquences nested)
+│   │   │   ├── motiondesign.js       # Pipeline Lottie (Claude → JSON → frames → .mov → timeline)
+│   │   │   ├── context.js            # Contexte vidéo (cible, intention, résumé)
+│   │   │   ├── setup.js              # Vérification dépendances (Python, Whisper, FFmpeg)
+│   │   │   └── propriete.js          # Édition propriétés MOGRT (batch, undo)
+│   │   │
+│   │   ├── pages/                      # --- Contrôleurs de pages ---
+│   │   │   ├── smartcut.js            # UI Smart Cut (3 phases: config → streaming → review)
+│   │   │   ├── settings.js           # UI Paramètres (provider toggle, dépendances)
+│   │   │   └── propriete.js          # UI Propriétés (drag values, font toolbar, color swatches)
+│   │   │
+│   │   ├── components/                 # --- Composants UI réutilisables ---
+│   │   │   ├── Component.js           # Classe de base (localStorage ↔ DOM sync)
+│   │   │   ├── ColorPicker.js         # Sélecteur couleur (Coloris, historique)
+│   │   │   ├── LoadingScreen.js       # Écran de chargement + progression + batch mode
+│   │   │   ├── NotificationSystem.js  # Notifications toast
+│   │   │   ├── SequenceSelector.js    # Sélecteur de séquences Premiere (active/all/custom)
+│   │   │   ├── collaps.js            # Sections repliables (event delegation)
+│   │   │   └── loading.js            # Legacy : loading screen simplifié (IIFE)
+│   │   │
+│   │   ├── utils/                      # --- Utilitaires ---
+│   │   │   ├── constants.js           # ~435 lignes de constantes (API, UI, messages, erreurs)
+│   │   │   ├── helpers.js            # Fonctions utilitaires (temps, JSON, string)
+│   │   │   ├── errorHandler.js       # Gestion d'erreurs centralisée (catalogue structuré)
+│   │   │   ├── premiereAsync.js      # Bridge JSX async (evalScript wrapper, timeout, escape)
+│   │   │   ├── templateLoader.js     # Chargement de templates Markdown (XHR sync)
+│   │   │   ├── storage.js            # Wrapper localStorage (typage auto)
+│   │   │   └── verify.js             # Authentification OTP + rotation longpass
+│   │   │
+│   │   └── vendors/                    # --- Librairies tierces ---
+│   │       ├── CSInterface.js         # SDK Adobe CEP (bridge JS ↔ ExtendScript)
+│   │       └── require.js            # Module loader AMD
 │   │
-│   ├── scripts/                       # ★ JavaScript applicatif (ES6)
-│   │   │
-│   │   ├── main.js                    # ★ Point d'entrée JS (~500 lignes)
-│   │   │                              #   Init composants, event handlers
-│   │   │                              #   Orchestration Step 1 et Step 2 (7 phases)
-│   │   │
-│   │   ├── index.js                   # Hub de re-exports modules
-│   │   │
-│   │   ├── api/                       # Couche communication API
-│   │   │   └── openai.js              # Client OpenAI (streaming SSE, batch, retry)
-│   │   │                              #   generateTitles(), analyzeBrolls()
-│   │   │
-│   │   ├── services/                  # Couche logique métier
-│   │   │   ├── subtitles.js           # Service transcription (Whisper)
-│   │   │   ├── titles.js              # Service titres IA (OpenAI batch)
-│   │   │   ├── brolls.js              # Service B-rolls IA (OpenAI + marqueurs)
-│   │   │   └── setup.js               # Gestionnaire dépendances (Python, pip, FFmpeg)
-│   │   │
-│   │   ├── components/                # Composants UI réutilisables
-│   │   │   ├── Component.js           # Classe de base (persistance localStorage)
-│   │   │   ├── ColorPicker.js         # Sélecteur couleur (extends Component + Coloris)
-│   │   │   ├── NotificationSystem.js  # Notifications toast (success/warning/error)
-│   │   │   ├── LoadingScreen.js       # Overlay modal + barre de progression
-│   │   │   ├── loading.js             # Overlay simplifié (legacy, globales)
-│   │   │   └── collaps.js             # Toggle sections collapsibles
-│   │   │
-│   │   ├── utils/                     # Infrastructure et utilitaires
-│   │   │   ├── constants.js           # ★ Configuration centralisée (OPENAI, CUTS, PATHS...)
-│   │   │   ├── premiereAsync.js       # ★ Bridge Promise pour CSInterface (~25 méthodes)
-│   │   │   ├── errorHandler.js        # Gestion centralisée des erreurs
-│   │   │   ├── helpers.js             # Fonctions utilitaires (temps, JSON, strings)
-│   │   │   ├── storage.js             # Wrapper localStorage typé
-│   │   │   └── verify.js              # Authentification OTP (polling, rotation)
-│   │   │
-│   │   └── vendors/                   # Bibliothèques tierces
-│   │       ├── CSInterface.js         # Adobe CEP SDK
-│   │       └── require.js             # Module loader
-│   │
-│   └── styles/                        # Feuilles de style CSS3
-│       ├── main.css                   # ★ Design system global (palette, typo, layout)
-│       ├── pages/
-│       │   └── montage.css            # Styles page montage (cuts, B-roll, templates)
-│       └── components/
-│           ├── broll.css              # Suggestion B-roll UI
-│           ├── loader.css             # Animations de chargement
-│           ├── notification.css       # Système toast (slide-in, progress bar)
-│           ├── wave.css               # Visualisation forme d'onde audio
-│           └── colorPicker.css        # Sélecteur couleur + intégration Coloris
+│   └── styles/                         # === STYLES CSS ===
+│       ├── main.css                    # Styles globaux + variables CSS
+│       ├── components/                 # Styles par composant (12 fichiers)
+│       │   ├── notification.css
+│       │   ├── wave.css
+│       │   ├── sequence-selector.css
+│       │   ├── action-bar.css
+│       │   ├── intention-card.css
+│       │   ├── short-card.css
+│       │   ├── smart-cut-progress.css
+│       │   ├── status-bar.css
+│       │   ├── streaming-zone.css
+│       │   ├── broll.css
+│       │   ├── colorPicker.css
+│       │   └── loader.css
+│       └── pages/                      # Styles par page (4 fichiers)
+│           ├── montage.css
+│           ├── propriete.css
+│           ├── settings.css
+│           └── smartcut.css
 │
-├── assets/                            # Ressources statiques
-│   ├── fonts/                         # Polices Gotham (OTF/TTF)
-│   │   ├── GothamNarrow-Medium.otf
-│   │   ├── GothamNarrow-Black.otf
-│   │   ├── GOTHAM-BOLD.TTF
-│   │   └── GOTHAM-MEDIUM.TTF
-│   ├── images/                        # Icônes UI
-│   │   ├── arrow.png                  # Flèche collapsible
-│   │   ├── cross.png                  # Checkmark
-│   │   └── banner-video.png           # Placeholder B-roll
-│   └── templates/titles/              # Templates titres
-│       ├── TITRE-1-H.mogrt            # Template MOGRT #1
-│       ├── TITRE-2-H.mogrt            # Template MOGRT #2
-│       ├── TITRE-3-H.mogrt            # Template MOGRT #3
-│       └── previews/                  # Aperçus vidéo des templates
-│           ├── template-1.mp4
-│           ├── template-2.mp4
-│           └── template-3.mp4
+├── config/                             # === TEMPLATES IA (PROMPTS) ===
+│   └── templates/                      # 14 fichiers Markdown éditables
+│       ├── lottie-creative-director.md # Prompt 1 : sous-titre → scénario créatif
+│       ├── lottie-style-impact.md      # Prompt 2 : scénario → JSON Lottie
+│       ├── motion-design-system-prompt.md
+│       ├── titles-system-prompt.md
+│       ├── add-title-here-prompt.md
+│       ├── brolls-system-prompt.md
+│       ├── context-system-prompt.md
+│       ├── smart-cut-system-prompt.md
+│       ├── smart-cut-multi-system-prompt.md
+│       ├── smart-cut-viral-shorts.md
+│       ├── smart-cut-punchlines.md
+│       ├── smart-cut-moments-cles.md
+│       ├── smart-cut-tutoriels.md
+│       └── smart-cut-custom-context.md
 │
-├── bin/                               # Binaires embarqués
-│   └── ffmpeg.exe                     # FFmpeg pour analyse audio RMS
-│
-├── scripts/                           # Scripts système
+├── scripts/                            # === SCRIPTS EXTERNES ===
 │   └── transcription/
-│       ├── run_transcription.bat      # Script batch (Python → Whisper)
-│       └── run_transcription.vbs      # Wrapper VBS (exécution silencieuse)
+│       ├── transcribe.py              # Service Whisper (word timestamps, custom replacements)
+│       ├── run_transcription.bat
+│       └── run_transcription.vbs
 │
-├── config/                            # Configuration alternative
-│   ├── .debug                         # Debug CEP (port 8099)
-│   └── CSXS/
-│       └── manifest.xml               # Manifeste alternatif (MainPath: index.html)
+├── assets/                             # === RESSOURCES STATIQUES ===
+│   ├── fonts/                          # Gotham (Bold, Medium, Narrow-Black, Narrow-Medium)
+│   ├── icons/                          # SVG (sequences, settings)
+│   ├── images/                         # PNG (arrow, banner-video, cross)
+│   └── templates/titles/              # MOGRT (3 templates) + previews MP4
 │
-├── backup/                            # Sauvegardes pré-refactoring
-│   ├── main.js.backup                 # main.js original (1611 lignes)
-│   ├── collaps.js.backup              # collaps.js original
-│   ├── verify.js.backup               # verify.js original
-│   └── manifest.xml.backup            # Manifeste original (INSÉCURISÉ)
+├── bin/
+│   └── ffmpeg.exe                      # FFmpeg (~133 MB) pour ProRes 4444
 │
-├── .debug                             # Debug CEP racine (port 8099)
-├── .editorconfig                      # Standards de formatage (UTF-8, LF, spaces)
-├── .gitignore                         # Exclusions Git
-├── README.md                          # README principal (template BMAD)
-├── CHANGES_SUMMARY.md                 # Résumé détaillé du refactoring
-├── README_REFACTORING.md              # Guide rapide refactoring
-├── REFACTORING_GUIDE.md               # Guide technique complet
-└── TUTORIEL-BMAD.md                   # Tutoriel méthode BMAD (~900 lignes)
+├── docs/                               # Documentation générée
+├── .debug                              # Config debug CEP (port 8099)
+├── temp/                               # Temporaire (node_modules Claude)
+├── lottie-frames/                      # Cache frames Lottie
+└── backup/                             # Sauvegardes de versions
 ```
 
 ---
 
-## Dossiers critiques
+## Répertoires critiques
 
-| Dossier | Rôle | Fichiers clés |
-|---------|------|---------------|
-| `src/jsx/` | API Premiere Pro directe | `Premiere.jsx` (~2000 lignes) |
-| `src/scripts/` | Application JavaScript | `main.js`, 15+ modules |
-| `src/pages/` | Interface utilisateur | 4 pages HTML |
-| `src/styles/` | Design system | `main.css` + 6 composants |
-| `CSXS/` | Configuration extension | `manifest.xml` |
-| `assets/templates/` | Templates MOGRT | 3 templates + previews |
-| `bin/` | Outils binaires | `ffmpeg.exe` |
-| `scripts/transcription/` | Transcription audio | BAT + VBS |
+| Répertoire | Rôle | Fichiers clés |
+|-----------|------|---------------|
+| `src/jsx/` | Backend ExtendScript | `Premiere.jsx` (~3900 lignes, ~60 fonctions publiques) |
+| `src/scripts/api/` | Clients IA | `openai.js` (REST+SSE), `claude.js` (bat+vbs+poll) |
+| `src/scripts/services/` | Logique métier | 8 services (titles, subtitles, brolls, smartcut, motiondesign, context, setup, propriete) |
+| `src/scripts/components/` | UI réutilisable | 7 composants avec persistance localStorage |
+| `src/scripts/utils/` | Utilitaires partagés | premiereAsync (bridge), constants, errorHandler |
+| `config/templates/` | Prompts IA | 14 templates Markdown éditables |
+| `src/pages/` | Pages HTML | 7 pages (auth → index → smartcut → montage → propriete → export) |
+| `bin/` | Binaires | ffmpeg.exe pour encodage ProRes 4444 |
 
 ---
 
 ## Points d'entrée
 
-| Point d'entrée | Type | Fichier |
-|----------------|------|---------|
-| **Extension CEP** | MainPath (manifest) | `src/pages/auth.html` |
-| **Script hôte** | ScriptPath (manifest) | `src/jsx/Premiere.jsx` |
-| **Application JS** | DOMContentLoaded | `src/scripts/main.js` |
-| **Modules JS** | Re-exports | `src/scripts/index.js` |
+| Type | Fichier | Description |
+|------|---------|-------------|
+| UI | `src/pages/auth.html` | Point d'entrée manifest.xml |
+| JS | `src/scripts/main.js` | Init app, composants, événements |
+| JSX | `src/jsx/Premiere.jsx` | Script hôte ExtendScript |
+| Python | `scripts/transcription/transcribe.py` | Service de transcription Whisper |
+| Config | `CSXS/manifest.xml` | Déclaration extension CEP |
 
 ---
 
-## Statistiques
+## Flux de navigation
 
-| Métrique | Valeur |
-|----------|--------|
-| Fichiers source JS | 16 |
-| Fichiers CSS | 7 |
-| Pages HTML | 4 |
-| Fichier JSX | 1 (~2000 lignes) |
-| Templates MOGRT | 3 |
-| Polices | 4 fichiers |
-| Images | 3 |
-| Vidéos preview | 3 |
-| Scripts système | 2 (BAT + VBS) |
-| Binaires | 1 (ffmpeg.exe) |
+```
+auth.html (OTP verify)
+    ↓ verified=true
+index.html (Création séquences + chutiers)
+    ↓
+├── smartcut.html (Smart Cut : analyse IA → shorts)
+├── montage.html (Montage IA : sous-titres → titres → B-rolls → motion)
+├── propriete.html (Éditeur MOGRT multi-clips)
+├── settings.html (Paramètres API + dépendances)
+└── export.html (Export multi-format)
+```
+
+---
+
+## Conventions de fichiers projet Premiere
+
+| Pattern | Emplacement | Description |
+|---------|------------|-------------|
+| `07_Audio/Audio/{file}.json` | Projet Premiere | Transcription brute (B-roll) |
+| `07_Audio/Subtitles/{file}SRT.json` | Projet Premiere | Transcription SRT |
+| `07_Audio/Titles/{file}_titles.json` | Projet Premiere | Titres générés |
+| `07_Audio/Brolls/{file}_brolls.json` | Projet Premiere | B-rolls analysés |
+| `07_Audio/Context/{file}_context.json` | Projet Premiere | Contexte vidéo (cache) |
+| `07_Audio/Smartcut/{seq}SRT.json` | Projet Premiere | Transcription Smart Cut |
+| `motion_*.mov` | Vault/motion-design | Overlays Lottie ProRes 4444 |

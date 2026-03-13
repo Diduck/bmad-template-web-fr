@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Productivity</title>
+    <script src="../scripts/vendors/CSInterface.js"></script>
+    <script src="../scripts/components/loading.js"></script>
+    <script src="../scripts/components/collaps.js"></script>
+    <script type="module" src="../scripts/pages/settings.js"></script>
+    <link rel="stylesheet" href="../styles/main.css" />
+    <link rel="stylesheet" href="../styles/pages/settings.css" />
+    <link rel="stylesheet" href="../styles/components/notification.css" />
+    <link rel="stylesheet" href="../styles/components/sequence-selector.css" />
+    <link rel="stylesheet" href="../styles/components/loader.css" />
+  </head>
+  <body>
+    <div id="loading-screen"></div>
+
+    <header>
+      <div class="step-nav">
+        <a href="./index.html"
+          ><div class="step"><p>Cr&#233;ation</p></div></a
+        >
+        <a href="./smartcut.html"
+          ><div class="step"><p>Smart Cut</p></div></a
+        >
+        <a href="./montage.html"
+          ><div class="step"><p>Montage</p></div></a
+        >
+        <a href="./propriete.html"
+          ><div class="step"><p>Propri&#233;t&#233;</p></div></a
+        >
+        <a href="./export.html"
+          ><div class="step"><p>Exportation</p></div></a
+        >
+      </div>
+      <div class="header-actions">
+        <div class="header-icon-wrapper" id="seqSelectorToggle">
+          <button class="header-icon" aria-label="S&#233;lection des s&#233;quences"
+                  aria-expanded="false" aria-controls="seqSelectorPopup">
+            <img src="../../assets/icons/sequences.svg" alt="">
+          </button>
+          <div id="seqSelectorPopup" class="seq-selector-popup" style="display: none;">
+          </div>
+        </div>
+        <a href="./settings.html" class="header-icon" aria-label="Param&#232;tres">
+          <img src="../../assets/icons/settings.svg" alt="">
+        </a>
+      </div>
+    </header>
+
+    <section id="main">
+      <div class="side side-left">
+        <h2>Param&#232;tres</h2>
+        <p class="desc">Configuration g&#233;n&#233;rale du plugin Productivity</p>
+      </div>
+
+      <div class="side side-right">
+        <div class="block-collaps">
+          <div class="box-collaps">
+            <p>Mod&#232;le IA</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content" style="display: none">
+            <p class="desc">Choisissez le moteur IA pour les titres, B-rolls et Smart Cut</p>
+            <div class="deep-content">
+              <div class="toggle-row">
+                <span class="toggle-label toggle-label-active" id="labelOpenAI">OpenAI</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="AIProvider" class="checkbox" aria-labelledby="labelOpenAI labelClaude" />
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label toggle-label-inactive" id="labelClaude">Claude Code</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps" id="apiOpenAISection">
+          <div class="box-collaps">
+            <p>API OpenAI</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content" style="display: none">
+            <p class="desc">Cl&#233; API n&#233;cessaire pour les B-rolls et les titres</p>
+            <div class="deep-content">
+              <form action="">
+                <label for="TokenOpenAI">
+                  <p>Token OpenAI</p>
+                  <input
+                    type="password"
+                    name="TokenOpenAI"
+                    class="box"
+                    id="TokenOpenAI"
+                  />
+                </label>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps">
+          <div class="box-collaps">
+            <p>Style sous-titres</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content" style="display: none">
+            <p class="desc">Chemin vers le fichier de style des sous-titres</p>
+            <div class="deep-content">
+              <form action="">
+                <label for="OptionPresetStyle" style="flex-direction: column; align-items: flex-start; gap: 20px;">
+                  <p>Chemin d'acc&#232;s vers : '.prtextstyle'</p>
+                  <input
+                    type="text"
+                    name="OptionPresetStyle"
+                    class="box"
+                    id="OptionPresetStyle"
+                  />
+                </label>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="block-collaps">
+          <div class="box-collaps">
+            <p>D&#233;pendances syst&#232;me</p>
+            <button class="collapsible">
+              <img src="../../assets/images/arrow.png" alt="" />
+            </button>
+          </div>
+          <div class="content" style="display: none">
+            <p class="desc">Statut des d&#233;pendances requises par le plugin</p>
+            <div class="deep-content">
+              <div id="depsStatus"></div>
+              <button type="button" class="button-black button-small" id="recheckDeps">
+                Rev&#233;rifier les d&#233;pendances
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

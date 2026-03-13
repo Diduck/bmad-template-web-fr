@@ -1,0 +1,1 @@
+Identifie les passages explicatifs, demonstrations et tutoriels. Cherche : explications claires, demonstrations etape par etape, conseils pratiques, astuces, methodes et processus, definitions et clarifications.

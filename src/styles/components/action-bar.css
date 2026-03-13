@@ -1,0 +1,15 @@
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.action-bar #SmartCutValidate {
+  flex: 1;
+}
+
+.action-bar .btn-sm {
+  white-space: nowrap;
+}

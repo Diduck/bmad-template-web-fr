@@ -1,0 +1,1 @@
+Identifie les phrases marquantes, citations memorables et formules percutantes. Cherche : formules choc, metaphores puissantes, conclusions tranchees, reponses cinglantes, punchlines humoristiques. Chaque segment doit contenir au moins une phrase qui se suffit a elle-meme.

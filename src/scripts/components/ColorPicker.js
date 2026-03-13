@@ -128,6 +128,13 @@ class ColorPicker extends Component {
         const element = this.getElement();
 
         if (element) {
+            // Reconfigure Coloris swatches for THIS picker before the popup opens
+            element.addEventListener('click', () => {
+                if (typeof Coloris !== 'undefined') {
+                    Coloris({ el: '.color-picker-square', swatches: this.getSwatches() });
+                }
+            }, true);
+
             // Update stored value and background when color changes
             element.addEventListener('input', (e) => {
                 const newColor = e.target.value;
@@ -163,6 +170,31 @@ class ColorPicker extends Component {
     setValue(value) {
         super.setValue(value);
         this.updatePreviewColor();
+    }
+
+    /**
+     * Change the default color dynamically (e.g. when switching template)
+     * Updates the default, current value, swatches, and preview
+     * @param {string} newDefault - New default color in hex format
+     */
+    setDefaultColor(newDefault) {
+        this.defaultColor = newDefault;
+        this.value = newDefault;
+        Storage.set(this.id, newDefault);
+        this.updatePreviewColor();
+
+        const element = this.getElement();
+        if (element) {
+            element.value = newDefault;
+        }
+
+        // Recalculate swatches with the new default at the end
+        if (typeof Coloris !== 'undefined') {
+            Coloris({
+                el: '.color-picker-square',
+                swatches: this.getSwatches()
+            });
+        }
     }
 }
 
