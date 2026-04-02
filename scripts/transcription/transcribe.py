@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", message="Failed to launch Triton kernels")
+
 import whisper
 import re
 import os

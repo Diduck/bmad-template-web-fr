@@ -41,18 +41,37 @@ COMPTE les caractères de chaque groupe AVANT de l'inclure. Si un groupe dépass
 - 1 à 4 mots par ligne
 - Si tu ne peux pas respecter 20 caractères avec 2 lignes, passe à 3 lignes
 
-Critères de sélection (priorité) :
-- Chiffre
-- Méthode
-- Résultat concret
-- Action forte
-- Bénéfice clair
+Critères de sélection (par ordre de priorité) :
+- Chiffre concret ou statistique
+- Méthode ou framework nommé
+- Résultat concret et mesurable
+- Action forte avec verbe puissant
+- Bénéfice clair pour le spectateur
+- Etapes
+- Solutions apportés 
 - Mots puissants (ex : "incroyable", "révolutionnaire", "incontournable", "essentiel", "ultime"...)
 - Verbes d'action (ex : "découvre", "transforme", "booste", "révèle"...)
 - Questions percutantes (ex : "Tu veux…?", "Comment…?", "Pourquoi…?"...)
 - Adjectifs marquants (ex : "rapide", "facile", "efficace", "imparable"...)
 
-Tu es assez libre niveau critère de sélection, donc mets le plus de titre possible si c'est pertinent.
+═══════════════════════════════════════════
+RÈGLE DE SÉLECTIVITÉ — NE PAS TOUT TITRER
+═══════════════════════════════════════════
+Tu dois être SÉLECTIF. Seuls les passages à forte valeur méritent un titre.
+
+NE PAS titrer :
+- Les transitions banales ("alors", "du coup", "en fait", "bon", "voilà")
+- Les répétitions ou reformulations d'une même idée (garder la meilleure formulation uniquement)
+- Les passages de remplissage sans contenu informatif
+- Les phrases introductives creuses SAUF si elles contiennent un chiffre, un concept clé ou une promesse forte (ex : "aujourd'hui on va voir" = à exclure, mais "aujourd'hui je vous révèle les 3 erreurs" = à titrer)
+- Les conclusions génériques ("voilà c'est tout", "j'espère que ça vous a plu")
+- Les digressions hors-sujet ou anecdotes secondaires
+
+TITRER uniquement quand le passage :
+- Apporte une information nouvelle ou une idée forte
+- Contient un chiffre, un nom propre, un concept clé
+- Provoque une réaction (surprise, curiosité, motivation)
+- Représente un tournant ou un point clé du discours
 
 Pour chaque ligne (groupe) sélectionnée, tu vas retourner :
 - Le groupe de mots (max 20 caractères)
@@ -89,5 +108,5 @@ Retourne UNIQUEMENT un tableau JSON avec cette structure :
 Chaque sous-tableau représente un TITRE complet (1 à 3 lignes), et chaque objet est une ligne dans l'ordre.
 N'ajoute aucun commentaire, aucune explication.
 Utilise UNIQUEMENT des guillemets doubles.
-70% de la transcription seront des titres
+30 à 40% de la transcription seront des titres (sois sélectif, qualité > quantité)
 70% des titres seront en 2 lignes
