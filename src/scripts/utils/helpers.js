@@ -134,6 +134,11 @@ export function normalizeTitlesJsonBatch(raw) {
         .replace(/\n?```\s*$/gm, '')            // Supprimer fermeture
         .trim();
 
+    // Gérer les arrays vides (ex: Claude retourne [] quand aucun titre pertinent)
+    if (/^\s*\[\s*\]\s*$/.test(cleaned)) {
+        return '[]';
+    }
+
     // Extraire le pattern [[ ... ]] (lazy match, ancré)
     // Utilise lazy quantifier pour éviter greedy matching sur plusieurs arrays
     const match = cleaned.match(/^\s*\[\s*\[[\s\S]*?\]\s*\]\s*$/);

@@ -329,7 +329,7 @@ class ClaudeClient {
                     onProgress: onDelta ? (charCount, text) => {
                         onDelta(text || '');
                     } : null
-                }, 180000);
+                }, 300000);
 
                 if (!result || !result.trim()) {
                     if (attempt < maxAttempts) {
