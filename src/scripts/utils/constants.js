@@ -350,6 +350,7 @@ export const COMPONENTS = {
     OPTION_ZOOM: 'OptionZoom',
     OPTION_FORMAT_PHONE: 'OptionformatPhone',
     OPTION_FORMAT_SQUARE: 'OptionformatCarre',
+    OPTION_FORMAT_PORTRAIT: 'OptionformatPortrait',
     OPTION_FORMAT_HORIZONTAL: 'OptionformatHorizontal',
     OPTION_BROLL: 'OptionBroll',
     SEQUENCE_SELECTION: 'sequenceSelection',

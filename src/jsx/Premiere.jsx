@@ -109,7 +109,8 @@ var BIN_NAMES = {
     EXPORT: "Export",
     VERTICAL: "Vertical",
     HORIZONTAL: "Horizontal",
-    CARRE: "Carre"
+    CARRE: "Carre",
+    PORTRAIT: "Portrait"
 };
 
 // ============================================================================
@@ -2780,7 +2781,7 @@ function createFormattedSequence(seqName, ads, hook, cta, binRush2, binTarget, w
 /**
  * Génère les combinaisons pour une Ad donnée
  */
-function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCTAs, binRush2, binVertical, binHorizontal, binCarre, OptionVertical, OptionHorizontal, OptionCarre) {
+function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCTAs, binRush2, binVertical, binHorizontal, binCarre, binPortrait, OptionVertical, OptionHorizontal, OptionCarre, OptionPortrait) {
     var adsName = ads.name;
 
     // Filtrage des hooks et CTAs spécifiques
@@ -2806,6 +2807,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookLabel + "_" + adsName + "_" + ctaLabel1, ads, hook, cta1, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookLabel + "_" + adsName + "_" + ctaLabel1, ads, hook, cta1, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookLabel + "_" + adsName + "_" + ctaLabel1, ads, hook, cta1, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookLabel + "_" + adsName + "_" + ctaLabel1, ads, hook, cta1, binRush2, binPortrait, 1080, 1350);
         }
 
         // 1b) CTAs globaux
@@ -2815,6 +2817,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookLabel + "_" + adsName + "_" + ctaLabel2, ads, hook, cta2, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookLabel + "_" + adsName + "_" + ctaLabel2, ads, hook, cta2, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookLabel + "_" + adsName + "_" + ctaLabel2, ads, hook, cta2, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookLabel + "_" + adsName + "_" + ctaLabel2, ads, hook, cta2, binRush2, binPortrait, 1080, 1350);
         }
 
         // 1c) Aucun CTA
@@ -2822,6 +2825,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookLabel + "_" + adsName, ads, hook, null, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookLabel + "_" + adsName, ads, hook, null, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookLabel + "_" + adsName, ads, hook, null, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookLabel + "_" + adsName, ads, hook, null, binRush2, binPortrait, 1080, 1350);
         }
     }
 
@@ -2837,6 +2841,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookGLabel + "_" + adsName + "_" + ctaLabel3, ads, hookG, cta3, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookGLabel + "_" + adsName + "_" + ctaLabel3, ads, hookG, cta3, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookGLabel + "_" + adsName + "_" + ctaLabel3, ads, hookG, cta3, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookGLabel + "_" + adsName + "_" + ctaLabel3, ads, hookG, cta3, binRush2, binPortrait, 1080, 1350);
         }
 
         // 2b) CTAs globaux
@@ -2846,6 +2851,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookGLabel + "_" + adsName + "_" + ctaLabel4, ads, hookG, cta4, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookGLabel + "_" + adsName + "_" + ctaLabel4, ads, hookG, cta4, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookGLabel + "_" + adsName + "_" + ctaLabel4, ads, hookG, cta4, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookGLabel + "_" + adsName + "_" + ctaLabel4, ads, hookG, cta4, binRush2, binPortrait, 1080, 1350);
         }
 
         // 2c) Aucun CTA
@@ -2853,6 +2859,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + hookGLabel + "_" + adsName, ads, hookG, null, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + hookGLabel + "_" + adsName, ads, hookG, null, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + hookGLabel + "_" + adsName, ads, hookG, null, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + hookGLabel + "_" + adsName, ads, hookG, null, binRush2, binPortrait, 1080, 1350);
         }
     }
 
@@ -2865,6 +2872,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + adsName + "_" + ctaLabel5, ads, null, cta5, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + adsName + "_" + ctaLabel5, ads, null, cta5, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + adsName + "_" + ctaLabel5, ads, null, cta5, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + adsName + "_" + ctaLabel5, ads, null, cta5, binRush2, binPortrait, 1080, 1350);
         }
 
         // 3b) CTAs globaux
@@ -2874,6 +2882,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + adsName + "_" + ctaLabel6, ads, null, cta6, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + adsName + "_" + ctaLabel6, ads, null, cta6, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + adsName + "_" + ctaLabel6, ads, null, cta6, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + adsName + "_" + ctaLabel6, ads, null, cta6, binRush2, binPortrait, 1080, 1350);
         }
 
         // 3c) Aucun CTA
@@ -2881,6 +2890,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
             if (OptionVertical) createFormattedSequence("Vertical_" + adsName, ads, null, null, binRush2, binVertical, 1080, 1920);
             if (OptionHorizontal) createFormattedSequence("Horizontal_" + adsName, ads, null, null, binRush2, binHorizontal, 1920, 1080);
             if (OptionCarre) createFormattedSequence("Carre_" + adsName, ads, null, null, binRush2, binCarre, 1080, 1080);
+            if (OptionPortrait) createFormattedSequence("Portrait_" + adsName, ads, null, null, binRush2, binPortrait, 1080, 1350);
         }
     }
 }
@@ -2888,7 +2898,7 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
 /**
  * STEP4 - Génération des formats d'export (FONCTION PUBLIQUE)
  */
-function STEP4_EXECUTE(OptionVertical, OptionHorizontal, OptionCarre) {
+function STEP4_EXECUTE(OptionVertical, OptionHorizontal, OptionCarre, OptionPortrait) {
     var sequenceBin = searchOrCreateBin(BIN_NAMES.SEQUENCES);
     var binRush2 = searchBinByName(BIN_NAMES.RUSH2, sequenceBin);
 
@@ -2901,6 +2911,7 @@ function STEP4_EXECUTE(OptionVertical, OptionHorizontal, OptionCarre) {
     var binVertical = OptionVertical ? searchOrCreateBin(BIN_NAMES.VERTICAL, binExport) : null;
     var binHorizontal = OptionHorizontal ? searchOrCreateBin(BIN_NAMES.HORIZONTAL, binExport) : null;
     var binCarre = OptionCarre ? searchOrCreateBin(BIN_NAMES.CARRE, binExport) : null;
+    var binPortrait = OptionPortrait ? searchOrCreateBin(BIN_NAMES.PORTRAIT, binExport) : null;
 
     var allADS = [];
     var allHooks = [];
@@ -2937,9 +2948,11 @@ function STEP4_EXECUTE(OptionVertical, OptionHorizontal, OptionCarre) {
             binVertical,
             binHorizontal,
             binCarre,
+            binPortrait,
             OptionVertical,
             OptionHorizontal,
-            OptionCarre
+            OptionCarre,
+            OptionPortrait
         );
     }
 }

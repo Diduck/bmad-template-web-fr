@@ -89,6 +89,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         [COMPONENTS.OPTION_ZOOM]: new Component(COMPONENTS.OPTION_ZOOM, false),
         [COMPONENTS.OPTION_FORMAT_PHONE]: new Component(COMPONENTS.OPTION_FORMAT_PHONE, false),
         [COMPONENTS.OPTION_FORMAT_SQUARE]: new Component(COMPONENTS.OPTION_FORMAT_SQUARE, false),
+        [COMPONENTS.OPTION_FORMAT_PORTRAIT]: new Component(COMPONENTS.OPTION_FORMAT_PORTRAIT, false),
         [COMPONENTS.OPTION_FORMAT_HORIZONTAL]: new Component(COMPONENTS.OPTION_FORMAT_HORIZONTAL, false),
         [COMPONENTS.OPTION_BROLL]: new Component(COMPONENTS.OPTION_BROLL, false),
         [COMPONENTS.FORMAT_SELECTION]: new Component(COMPONENTS.FORMAT_SELECTION, "selectedFormatPhone"),
@@ -1133,7 +1134,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                         await csInterface.evalScript(
                             `STEP4_EXECUTE(${components[COMPONENTS.OPTION_FORMAT_PHONE].getValue()}, ` +
                             `${components[COMPONENTS.OPTION_FORMAT_HORIZONTAL].getValue()}, ` +
-                            `${components[COMPONENTS.OPTION_FORMAT_SQUARE].getValue()})`,
+                            `${components[COMPONENTS.OPTION_FORMAT_SQUARE].getValue()}, ` +
+                            `${components[COMPONENTS.OPTION_FORMAT_PORTRAIT].getValue()})`,
                             function () {}
                         );
                     } catch (error) {
