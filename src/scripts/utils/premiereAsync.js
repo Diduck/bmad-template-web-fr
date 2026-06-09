@@ -240,7 +240,7 @@ class PremiereAsync {
         const safeName = sequenceName.replace(/"/g, '\\"');
         const result = await this._evalWithTimeout(
             `(function(){ var seq = searchSequenceByName("${safeName}"); if(!seq) return JSON.stringify({Message:"Séquence introuvable",fileName:"${safeName}"}); return JSON.stringify(AnalyseCut(seq, "${audioSuffix}", ${margin}, ${threshold})); })()`,
-            120000
+            600000
         );
         return JSON.parse(result);
     }

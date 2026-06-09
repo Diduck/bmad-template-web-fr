@@ -82,6 +82,7 @@ var CONSTANTS = {
     EXPORT_WAIT_STEP_MS: 1000,
     MIN_EXPORT_WAIT_MS: 2000,
     EXPORT_STABLE_CHECKS: 3,
+    EXPORT_MAX_WAIT_MS: 5 * 60 * 1000,
     RMS_SILENCE_THRESHOLD: -60,
     AUTO_THRESHOLD_FALLBACK: -65,
     CUT_MARGIN_DEFAULT: 0.15,
@@ -672,16 +673,26 @@ function queueEncodingJob(seq, outPath, presetEprPath) {
  * (taille stable sur plusieurs vérifications consécutives)
  */
 function waitForFileToExist(outPath) {
-    // 1) Attend que le fichier soit créé
+    var waited = 0;
+
+    // 1) Attend que le fichier soit créé (borné par EXPORT_MAX_WAIT_MS)
     while (FileExists(outPath) !== "true") {
+        if (waited >= CONSTANTS.EXPORT_MAX_WAIT_MS) {
+            throw new Error("Timeout export : le fichier " + outPath + " n'a jamais été créé (" + CONSTANTS.EXPORT_MAX_WAIT_MS + "ms).");
+        }
         $.sleep(CONSTANTS.EXPORT_WAIT_STEP_MS);
+        waited += CONSTANTS.EXPORT_WAIT_STEP_MS;
     }
 
     // 2) Attend que la taille du fichier se stabilise (écriture terminée)
     var stableCount = 0;
     var lastSize = -1;
     while (stableCount < CONSTANTS.EXPORT_STABLE_CHECKS) {
+        if (waited >= CONSTANTS.EXPORT_MAX_WAIT_MS) {
+            throw new Error("Timeout export : l'écriture de " + outPath + " ne s'est jamais stabilisée (" + CONSTANTS.EXPORT_MAX_WAIT_MS + "ms).");
+        }
         $.sleep(CONSTANTS.EXPORT_WAIT_STEP_MS);
+        waited += CONSTANTS.EXPORT_WAIT_STEP_MS;
         var f = new File(outPath);
         var currentSize = f.exists ? f.length : 0;
         if (currentSize > 0 && currentSize === lastSize) {
@@ -2108,7 +2119,9 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
 
     var sequenceItem = searchSequenceByName(sequence.name);
     exportSequenceWavSilently(sequenceItem, audioPath + sequence.name + ".wav", WAVFOLDERPRESET);
-    $.sleep(20000);
+    // waitForFileToExist() garantit déjà que le WAV est écrit et stabilisé.
+    // Court délai pour laisser AME relâcher le handle de fichier avant ffmpeg.
+    $.sleep(CONSTANTS.MIN_EXPORT_WAIT_MS);
 
     var files = audioFolder.getFiles(function (file) {
         return file.name.replace(/%20/g, " ").indexOf(suffixAudioUpgrade) === -1;
