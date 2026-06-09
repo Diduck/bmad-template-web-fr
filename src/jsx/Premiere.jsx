@@ -82,7 +82,8 @@ var CONSTANTS = {
     EXPORT_WAIT_STEP_MS: 1000,
     MIN_EXPORT_WAIT_MS: 2000,
     EXPORT_STABLE_CHECKS: 3,
-    EXPORT_MAX_WAIT_MS: 5 * 60 * 1000,
+    EXPORT_MAX_WAIT_MS: 15 * 60 * 1000,
+    EXPORT_POST_WAIT_MS: 20000,
     RMS_SILENCE_THRESHOLD: -60,
     AUTO_THRESHOLD_FALLBACK: -65,
     CUT_MARGIN_DEFAULT: 0.15,
@@ -2102,7 +2103,31 @@ function groupCutZones(lowRmsTimes, margin) {
 function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
     var sequenceBin = searchBinByName(BIN_NAMES.SEQUENCES);
     var binRush1 = searchBinByName(BIN_NAMES.RUSH1, sequenceBin);
-    var trackClip = searchSequenceByName(binRush1.children[0].name).videoTracks[0].clips[0];
+
+    if (!binRush1 || !binRush1.children) {
+        notif("Bin '" + BIN_NAMES.RUSH1 + "' introuvable pour localiser le dossier audio", "error");
+        return { "Message": "Bin '" + BIN_NAMES.RUSH1 + "' introuvable", "fileName": sequence.name };
+    }
+
+    // Trouve la 1ere VRAIE sequence du bin Rush1 avec un clip video.
+    // Le bin peut contenir des fichiers audio (.wav issus du mixage) qu'il
+    // faut ignorer : children[0] n'est PAS forcement une sequence.
+    var trackClip = null;
+    for (var ci = 0; ci < binRush1.children.numItems; ci++) {
+        var child = binRush1.children[ci];
+        if (!child.isSequence || !child.isSequence()) continue;
+        var childSeq = searchSequenceByName(child.name);
+        if (childSeq && childSeq.videoTracks.numTracks > 0 && childSeq.videoTracks[0].clips.numItems > 0) {
+            trackClip = childSeq.videoTracks[0].clips[0];
+            break;
+        }
+    }
+
+    if (!trackClip) {
+        notif("Aucune sequence avec clip video dans le bin '" + BIN_NAMES.RUSH1 + "'", "error");
+        return { "Message": "Aucune sequence valide dans '" + BIN_NAMES.RUSH1 + "'", "fileName": sequence.name };
+    }
+
     var rushFolder = getFolderPath(trackClip);
     var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
     var audioFolder = new Folder(audioFolderBin);
@@ -2119,9 +2144,10 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
 
     var sequenceItem = searchSequenceByName(sequence.name);
     exportSequenceWavSilently(sequenceItem, audioPath + sequence.name + ".wav", WAVFOLDERPRESET);
-    // waitForFileToExist() garantit déjà que le WAV est écrit et stabilisé.
-    // Court délai pour laisser AME relâcher le handle de fichier avant ffmpeg.
-    $.sleep(CONSTANTS.MIN_EXPORT_WAIT_MS);
+    // Sécurité : waitForFileToExist() détecte la fin via "taille stable 3s",
+    // mais AME peut marquer une pause >3s en cours de rendu (faux positif).
+    // Ce délai garantit qu'AME a vraiment fini d'écrire avant que ffmpeg lise.
+    $.sleep(CONSTANTS.EXPORT_POST_WAIT_MS);
 
     var files = audioFolder.getFiles(function (file) {
         return file.name.replace(/%20/g, " ").indexOf(suffixAudioUpgrade) === -1;

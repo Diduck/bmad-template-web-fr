@@ -239,8 +239,8 @@ class PremiereAsync {
     async analyzeCutForSequence(sequenceName, audioSuffix, margin, threshold) {
         const safeName = sequenceName.replace(/"/g, '\\"');
         const result = await this._evalWithTimeout(
-            `(function(){ var seq = searchSequenceByName("${safeName}"); if(!seq) return JSON.stringify({Message:"Séquence introuvable",fileName:"${safeName}"}); return JSON.stringify(AnalyseCut(seq, "${audioSuffix}", ${margin}, ${threshold})); })()`,
-            600000
+            `(function(){ try { var seq = searchSequenceByName("${safeName}"); if(!seq) return JSON.stringify({Message:"Séquence introuvable",fileName:"${safeName}"}); return JSON.stringify(AnalyseCut(seq, "${audioSuffix}", ${margin}, ${threshold})); } catch(err) { return JSON.stringify({Message:"Erreur JSX AnalyseCut: " + (err && err.message ? err.message : String(err)) + (err && err.line ? " (ligne " + err.line + ")" : ""), fileName:"${safeName}", isError:true}); } })()`,
+            1200000
         );
         return JSON.parse(result);
     }
