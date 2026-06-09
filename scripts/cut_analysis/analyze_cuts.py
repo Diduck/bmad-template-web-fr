@@ -7,7 +7,7 @@ sequence de 72 min) par un traitement Python rapide (<2s pour le meme volume).
 
 Pipeline :
   WAV -> ffmpeg astats (RMS par frame) -> parse -> seuil (auto/manuel)
-       -> zones de silence -> regroupement -> marge -> CutZones
+       -> runs de silence -> regroupement content-aware -> marge -> CutZones
 
 Sortie : un JSON au MEME format que l'ancien AnalyseCut JSX, consomme tel quel
 par displayCutAnalysis (JS) et CutSecond (JSX) :
@@ -33,7 +33,12 @@ import re
 import subprocess
 
 # --- Constantes (alignees sur CONSTANTS du JSX) ---
-FRAME_GROUPING_THRESHOLD = 0.15   # gap max (s) pour regrouper des frames silencieuses
+# Regroupement "content-aware" : on ne fusionne deux silences (en pontant le
+# passage au-dessus du seuil qui les separe) QUE si ce passage est un blip
+# (clic, frame parasite, souffle), jamais s'il s'agit de vraie parole.
+FRAME_GROUPING_THRESHOLD = 0.15   # gap max (s) : au-dela, c'est forcement du contenu -> jamais ponte
+SPEECH_MIN_DURATION = 0.07        # en-deca (s), le trou est trop court pour un mot -> toujours ponte (clic)
+SPEECH_MARGIN_DB = 4.0            # entre les deux : c'est de la parole si le pic depasse seuil + cette marge (dB)
 AUTO_THRESHOLD_FALLBACK = -65.0   # seuil si aucune valeur RMS numerique
 DEFAULT_FPS = 30                  # arrondi a la frame (roundToFrame)
 DISPLAY_BARS = 1800               # nb max de barres envoyees a l'UI (downsample)
@@ -103,28 +108,68 @@ def calculate_rms_threshold(all_values):
     return (-90.0 + median) / 2.0 + 1.5
 
 
-def filter_silence_zones(all_values, threshold):
-    """Times ou rms < seuil. Reproduit filterSilenceZones."""
-    return [t for (t, rms) in all_values if t is not None and rms < threshold]
+def group_cut_zones(all_values, threshold, margin):
+    """Regroupe les silences en zones de coupe, puis applique la marge.
 
+    Version "content-aware". Entre deux runs de silence se trouve un passage
+    entierement au-dessus du seuil (sinon il y aurait un silence au milieu). On
+    fusionne les deux silences (= on coupe par-dessus ce passage) UNIQUEMENT si
+    ce passage est un blip et non de la parole :
 
-def group_cut_zones(low_times, margin):
-    """Regroupe les times proches puis applique la marge. Reproduit groupCutZones."""
-    grouped = []
-    group_start = None
-    last_time = None
-    for t in low_times:
-        if group_start is None:
-            group_start = t
-        elif t - last_time > FRAME_GROUPING_THRESHOLD:
-            grouped.append([group_start, last_time])
-            group_start = t
-        last_time = t
-    if group_start is not None and last_time is not None:
-        grouped.append([group_start, last_time])
+      - gap > FRAME_GROUPING_THRESHOLD  -> contenu certain -> pas de fusion
+      - gap < SPEECH_MIN_DURATION       -> trop court pour un mot -> blip, on ponte
+      - sinon                           -> parole si pic >= seuil + SPEECH_MARGIN_DB
+                                           (parole -> pas de fusion ; sinon souffle/bruit -> on ponte)
+
+    Empeche d'avaler un mot bref coince entre deux silences (bug de l'ancien
+    pont aveugle a FRAME_GROUPING_THRESHOLD).
+    """
+    runs = []                 # [[start, end], ...] runs de silence (avant marge)
+    cur_start = None
+    cur_end = None
+    gap_peak = RMS_NEG_INF    # pic RMS du passage loud en cours (depuis la fin du dernier run)
+
+    for (t, rms) in all_values:
+        if t is None:
+            continue
+        if rms < threshold:
+            # --- frame silencieuse ---
+            if cur_start is None:
+                # ouverture d'un silence : faut-il ponter le passage loud precedent ?
+                if runs:
+                    prev_start, prev_end = runs[-1]
+                    gap_dur = t - prev_end
+                    if gap_dur > FRAME_GROUPING_THRESHOLD:
+                        bridge = False
+                    elif gap_dur < SPEECH_MIN_DURATION:
+                        bridge = True
+                    else:
+                        bridge = gap_peak < threshold + SPEECH_MARGIN_DB
+                    if bridge:
+                        cur_start = prev_start   # prolonge le run precedent
+                        runs.pop()
+                    else:
+                        cur_start = t
+                else:
+                    cur_start = t
+                cur_end = t
+            else:
+                cur_end = t
+        else:
+            # --- frame au-dessus du seuil (passage loud) ---
+            if cur_start is not None:
+                runs.append([cur_start, cur_end])
+                cur_start = None
+                cur_end = None
+                gap_peak = rms
+            elif rms > gap_peak:
+                gap_peak = rms
+
+    if cur_start is not None:
+        runs.append([cur_start, cur_end])
 
     cut_zones = []
-    for start, end in grouped:
+    for start, end in runs:
         s = start + margin
         e = end - margin
         if s < e:
@@ -220,8 +265,7 @@ def main():
         threshold = auto_threshold
     log("Seuil utilise : " + str(threshold) + (" (auto)" if auto_threshold is not None else " (manuel)"))
 
-    low_times = filter_silence_zones(all_values, threshold)
-    cut_zones = group_cut_zones(low_times, margin)
+    cut_zones = group_cut_zones(all_values, threshold, margin)
     log("Zones de coupe : " + str(len(cut_zones)))
 
     result = {

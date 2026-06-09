@@ -87,7 +87,9 @@ var CONSTANTS = {
     RMS_SILENCE_THRESHOLD: -60,
     AUTO_THRESHOLD_FALLBACK: -65,
     CUT_MARGIN_DEFAULT: 0.15,
-    FRAME_GROUPING_THRESHOLD: 0.15
+    FRAME_GROUPING_THRESHOLD: 0.15,
+    SPEECH_MIN_DURATION: 0.07,
+    SPEECH_MARGIN_DB: 4.0
 };
 
 var PREMIERE_TITLES = [
@@ -1278,28 +1280,39 @@ function CutSecond(CutZones, sequence) {
     }
 
     project.activeSequence = sequence;
-    var qeSeq = qe.project.getActiveSequence();
 
-    // Tri par ordre décroissant pour découper de la fin vers le début
-    CutZones.sort(function (a, b) { return b[0] - a[0]; });
+    // Découpe du DÉBUT vers la fin (ordre chronologique). À chaque extract, tout
+    // l'aval se décale vers la gauche : on corrige donc le timecode de chaque
+    // zone en lui retranchant la durée déjà retirée. Le cumul se fait en FRAMES
+    // (entier) et non en secondes, pour éviter toute dérive d'arrondi sur des
+    // centaines de cuts (sinon les zones finales tombent à côté).
+    CutZones.sort(function (a, b) { return a[0] - b[0]; });
+
+    var tpf = Number(sequence.timebase);
+    var fpsExact = CONSTANTS.TICKS_PER_SECOND / tpf;
+    var removedFrames = 0;
 
     for (var i = 0; i < CutZones.length; i++) {
-        var startSec = CutZones[i][0];
-        var endSec = CutZones[i][1];
+        var startF = Math.round(CutZones[i][0] * fpsExact) - removedFrames;
+        var endF = Math.round(CutZones[i][1] * fpsExact) - removedFrames;
 
-        qeSeq = qe.project.getActiveSequence();
+        // Zone vide après quantification (marge ayant tout mangé) : on saute
+        if (endF <= startF) continue;
 
-        var tcIn = secondsToTimecode(startSec);
-        var tcOut = secondsToTimecode(endSec);
+        var qeSeq = qe.project.getActiveSequence();
 
-        $.sleep(15);
+        var tcIn = secondsToTimecode(startF / fpsExact, sequence);
+        var tcOut = secondsToTimecode(endF / fpsExact, sequence);
+
+        $.sleep(10);
         qeSeq.setInPoint(tcIn);
-        $.sleep(15);
+        $.sleep(10);
         qeSeq.setOutPoint(tcOut);
-        $.sleep(15);
+        $.sleep(10);
 
-        if (qeSeq.extract && tcIn !== tcOut) {
+        if (qeSeq.extract) {
             qeSeq.extract();
+            removedFrames += (endF - startF);
         }
     }
 
@@ -1801,6 +1814,155 @@ function GetCTIPosition() {
 }
 
 /**
+ * Retourne le 1er clip audio AUDIBLE présent à un temps donné (s).
+ * Ignore les pistes muettes (ex. l'audio caméra A1 est mute dans le workflow,
+ * le vrai son est sur A2) et les clips désactivés.
+ */
+function _findAudioClipAtTime(seq, timeSec) {
+    if (!seq || !seq.audioTracks) return null;
+    for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+        var track = seq.audioTracks[t];
+        var muted = false;
+        try { muted = track.isMuted && track.isMuted(); } catch (eM) { muted = false; }
+        if (muted) continue;
+        for (var c = 0; c < track.clips.numItems; c++) {
+            var clip = track.clips[c];
+            var disabled = false;
+            try { disabled = clip.disabled; } catch (eD) { disabled = false; }
+            if (disabled) continue;
+            var s = ticksToSeconds(clip.start.ticks, 6);
+            var e = ticksToSeconds(clip.end.ticks, 6);
+            if (timeSec >= s && timeSec < e) return clip;
+        }
+    }
+    return null;
+}
+
+/**
+ * Sonde le niveau audio au curseur : retourne le chemin du média source du clip
+ * audio sous le CTI + le temps source correspondant, pour que l'UI mesure le dB
+ * (ffmpeg) SANS analyse préalable. Sert à calibrer le seuil Auto-Cut.
+ *
+ * Gère les SÉQUENCES IMBRIQUÉES (le rush est souvent une sous-séquence) : descend
+ * jusqu'au vrai clip média en remappant le temps à chaque niveau.
+ * (Vitesse de clip supposée 1.0 ; 1re piste audio ayant un clip sous le curseur.)
+ */
+function GetPlayheadProbeInfo() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return JSON.stringify({ ok: false, error: "Aucune séquence active" });
+
+        var playheadSec = ticksToSeconds(seq.getPlayerPosition().ticks, 6);
+
+        // WAV exporté de la séquence (mix exact que mesure l'analyseur) si présent.
+        // L'UI le préfère au média source quand il existe.
+        var wavPath = "";
+        var wavExists = false;
+        try {
+            var ap = resolveCutAudioPath();
+            if (ap) {
+                wavPath = ap + seq.name + ".wav";
+                wavExists = new File(wavPath).exists;
+            }
+        } catch (eW) { wavPath = ""; wavExists = false; }
+
+        var curSeq = seq;
+        var curTime = playheadSec;
+        var depth = 0;
+
+        while (depth < 4) {
+            var clip = _findAudioClipAtTime(curSeq, curTime);
+            if (!clip || !clip.projectItem) {
+                return JSON.stringify({ ok: true, hasClip: false, playhead: playheadSec, wavPath: wavPath, wavExists: wavExists,
+                    reason: "aucun clip audio audible sous le curseur (niveau " + depth + ")" });
+            }
+
+            // Temps mappé dans la source du clip (média ou sous-séquence)
+            var clipStartSec = ticksToSeconds(clip.start.ticks, 6);
+            var inPointSec = 0;
+            try { inPointSec = ticksToSeconds(clip.inPoint.ticks, 6); } catch (eIn) { inPointSec = 0; }
+            var innerTime = inPointSec + (curTime - clipStartSec);
+            if (innerTime < 0) innerTime = 0;
+
+            var isNested = false;
+            try { isNested = clip.projectItem.isSequence && clip.projectItem.isSequence(); } catch (eSq) { isNested = false; }
+
+            if (isNested) {
+                var nested = searchSequenceByName(clip.projectItem.name);
+                if (!nested) {
+                    return JSON.stringify({ ok: true, hasClip: false, playhead: playheadSec, wavPath: wavPath, wavExists: wavExists,
+                        reason: "sous-séquence introuvable : " + clip.projectItem.name });
+                }
+                curSeq = nested;
+                curTime = innerTime;
+                depth++;
+                continue;
+            }
+
+            // Clip média réel
+            var mediaPath = "";
+            try { mediaPath = clip.projectItem.getMediaPath(); } catch (eMp) { mediaPath = ""; }
+            if (!mediaPath) {
+                return JSON.stringify({ ok: true, hasClip: false, playhead: playheadSec, wavPath: wavPath, wavExists: wavExists,
+                    reason: "clip sans média : " + (clip.name || "?") });
+            }
+
+            return JSON.stringify({
+                ok: true,
+                hasClip: true,
+                playhead: playheadSec,
+                wavPath: wavPath, wavExists: wavExists,
+                mediaPath: mediaPath,
+                sourceTime: innerTime
+            });
+        }
+
+        return JSON.stringify({ ok: true, hasClip: false, playhead: playheadSec, wavPath: wavPath, wavExists: wavExists,
+            reason: "imbrication trop profonde (>3 niveaux)" });
+    } catch (e) {
+        return JSON.stringify({ ok: false, error: e.toString() });
+    }
+}
+
+/**
+ * Lance (async) une mesure ffmpeg volumedetect sur une fenêtre d'un média et
+ * redirige la sortie vers un .txt temporaire que le JS lira (via cep.fs).
+ * Réutilise le pattern éprouvé vbs (sh.Run caché) de runFFmpegAnalysis — pas de
+ * dépendance Node (indisponible dans les modules ES de ce manifest CEP).
+ * @returns {string} JSON {ok, outTxt} ou {ok:false, error}
+ */
+function RunDbProbe(probePath, startSec, durSec) {
+    try {
+        var tmp = Folder.temp.fsName + "\\";
+        var outTxt = tmp + "dbprobe.txt";
+        var vbsPath = tmp + "dbprobe.vbs";
+
+        // Nettoie l'ancienne sortie pour que le JS ne lise pas une valeur périmée
+        var oF = new File(outTxt);
+        if (oF.exists) { try { oF.remove(); } catch (e1) {} }
+
+        var command = '""' + FFMPEGPATH + '" -hide_banner -nostats -ss ' + startSec +
+            ' -t ' + durSec + ' -i "' + probePath + '" -af volumedetect -f null NUL > "' + outTxt + '" 2>&1"';
+
+        var vbs = new File(vbsPath);
+        vbs.encoding = "UTF-8";
+        if (vbs.open("w")) {
+            vbs.write(
+                'Set sh = CreateObject("WScript.Shell")\r\n' +
+                'sh.Run "cmd.exe /c ' + command.replace(/"/g, '""') + '", 0, True\r\n'
+            );
+            vbs.close();
+            if (vbs.exists) {
+                vbs.execute();
+            }
+        }
+        return JSON.stringify({ ok: true, outTxt: outTxt });
+    } catch (e) {
+        return JSON.stringify({ ok: false, error: e.toString() });
+    }
+}
+
+/**
  * Lit le fichier SRT.json et retourne les sous-titres dans une fenêtre temporelle
  */
 function GetSubtitlesAtTime(sequenceName, timeSeconds, windowSeconds) {
@@ -2045,46 +2207,77 @@ function parseFFmpegResults(audioPath, sequenceName, time) {
 }
 
 /**
- * Filtre les zones de silence à partir des valeurs RMS et d'un seuil
+ * Groupe les runs de silence en zones de coupe (version content-aware).
+ *
+ * Entre deux runs de silence se trouve un passage entierement au-dessus du
+ * seuil. On fusionne les deux silences (= on coupe par-dessus ce passage)
+ * UNIQUEMENT si c'est un blip et non de la parole :
+ *   - gap > FRAME_GROUPING_THRESHOLD -> contenu certain  -> pas de fusion
+ *   - gap < SPEECH_MIN_DURATION      -> trop court (clic) -> on ponte
+ *   - sinon -> parole si pic >= seuil + SPEECH_MARGIN_DB (parole -> pas de fusion)
+ * Empeche d'avaler un mot bref coince entre deux silences.
  */
-function filterSilenceZones(AllValueWav, threshold) {
-    var lowRmsTimes = [];
+function groupCutZones(AllValueWav, threshold, margin) {
+    var runs = [];
+    var curStart = null;
+    var curEnd = null;
+    var gapPeak = -99; // pic RMS du passage loud en cours (-inf stocke en -99)
+
     for (var i = 0; i < AllValueWav.length; i++) {
-        if (AllValueWav[i].debit < threshold && AllValueWav[i].time !== null) {
-            lowRmsTimes.push(AllValueWav[i].time);
+        var t = AllValueWav[i].time;
+        var rms = AllValueWav[i].debit;
+        if (t === null || t === undefined) continue;
+
+        if (rms < threshold) {
+            // frame silencieuse
+            if (curStart === null) {
+                // ouverture d'un silence : faut-il ponter le passage loud precedent ?
+                if (runs.length > 0) {
+                    var prev = runs[runs.length - 1];
+                    var gapDur = t - prev[1];
+                    var bridge;
+                    if (gapDur > CONSTANTS.FRAME_GROUPING_THRESHOLD) {
+                        bridge = false;
+                    } else if (gapDur < CONSTANTS.SPEECH_MIN_DURATION) {
+                        bridge = true;
+                    } else {
+                        bridge = gapPeak < threshold + CONSTANTS.SPEECH_MARGIN_DB;
+                    }
+                    if (bridge) {
+                        curStart = prev[0]; // prolonge le run precedent
+                        runs.pop();
+                    } else {
+                        curStart = t;
+                    }
+                } else {
+                    curStart = t;
+                }
+                curEnd = t;
+            } else {
+                curEnd = t;
+            }
+        } else {
+            // frame au-dessus du seuil (passage loud)
+            if (curStart !== null) {
+                runs.push([curStart, curEnd]);
+                curStart = null;
+                curEnd = null;
+                gapPeak = rms;
+            } else if (rms > gapPeak) {
+                gapPeak = rms;
+            }
         }
     }
-    return lowRmsTimes;
-}
 
-/**
- * Groupe les timestamps proches en blocs
- */
-function groupCutZones(lowRmsTimes, margin) {
-    var grouped = [];
-    var groupStart = null;
-    var lastTime = null;
-
-    for (var i = 0; i < lowRmsTimes.length; i++) {
-        var t = lowRmsTimes[i];
-        if (groupStart === null) {
-            groupStart = t;
-        } else if (t - lastTime > CONSTANTS.FRAME_GROUPING_THRESHOLD) {
-            grouped.push([groupStart, lastTime]);
-            groupStart = t;
-        }
-        lastTime = t;
-    }
-
-    if (groupStart !== null && lastTime !== null) {
-        grouped.push([groupStart, lastTime]);
+    if (curStart !== null) {
+        runs.push([curStart, curEnd]);
     }
 
     // Applique la marge
     var CutZones = [];
-    for (var j = 0; j < grouped.length; j++) {
-        var start = grouped[j][0];
-        var end = grouped[j][1];
+    for (var j = 0; j < runs.length; j++) {
+        var start = runs[j][0];
+        var end = runs[j][1];
 
         var startWithMargin = start + margin;
         var endWithMargin = end - margin;
@@ -2184,8 +2377,7 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
             effectiveThreshold = autoThreshold;
         }
 
-        var lowRmsTimes = filterSilenceZones(parseResult.AllValueWav, effectiveThreshold);
-        var CutZones = groupCutZones(lowRmsTimes, margin);
+        var CutZones = groupCutZones(parseResult.AllValueWav, effectiveThreshold, margin);
 
         return {
             "Message": "Analyse réussie",

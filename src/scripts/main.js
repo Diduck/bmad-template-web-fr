@@ -12,6 +12,7 @@ import SubtitlesService from './services/subtitles.js';
 import SetupManager from './services/setup.js';
 import ContextService from './services/context.js';
 import MotionDesignService from './services/motiondesign.js';
+import { initCursorDbMeter } from './components/cursorDbMeter.js';
 import OpenAIClient from './api/openai.js';
 import ClaudeClient from './api/claude.js';
 import { COMPONENTS, PATHS, SEQUENCE, MESSAGES, SUCCESS, ERRORS, SUBTITLES, SELECTION_MODES, MOTION_DESIGN, AI_PROVIDERS } from './utils/constants.js';
@@ -46,6 +47,9 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // ── Setup: check & install dependencies on first launch ──
     const extensionRoot = csInterface.getSystemPath(SystemPath.EXTENSION);
+
+    // VU-mètre au curseur (page Montage uniquement ; no-op ailleurs)
+    initCursorDbMeter(csInterface, extensionRoot);
     const setupManager = new SetupManager(loadingScreen, window.notifications, extensionRoot, premiereAsync);
     const setupOk = await setupManager.run();
     if (!setupOk) {
