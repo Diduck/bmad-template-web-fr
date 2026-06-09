@@ -229,20 +229,144 @@ class PremiereAsync {
     }
 
     /**
-     * Analyze cuts for a single sequence
+     * Analyze cuts for a single sequence — ASYNCHRONE.
+     *
+     * Architecture : export WAV non-bloquant (AME) + polling JS de la taille,
+     * puis analyse déléguée à Python (ffmpeg astats + parse + zones, écrit un
+     * petit JSON), avec polling du marqueur .done. Aucun timeout JSX bloquant
+     * (le parsing 204k lignes en ExtendScript prenait 2,5 min et faisait
+     * exploser le timeout sur les séquences longues).
+     *
      * @param {string} sequenceName - Sequence name
-     * @param {string} audioSuffix - Audio suffix
+     * @param {string} audioSuffix - Audio suffix (conservé pour compat, non utilisé)
      * @param {number} margin - Cut margin
-     * @param {number} threshold - RMS threshold
+     * @param {number} threshold - RMS threshold (null = auto)
+     * @param {Function} [onProgress] - (message, percent) callback de progression
      * @returns {Promise<Object>} Analysis result
      */
-    async analyzeCutForSequence(sequenceName, audioSuffix, margin, threshold) {
+    async analyzeCutForSequence(sequenceName, audioSuffix, margin, threshold, onProgress) {
         const safeName = sequenceName.replace(/"/g, '\\"');
-        const result = await this._evalWithTimeout(
-            `(function(){ try { var seq = searchSequenceByName("${safeName}"); if(!seq) return JSON.stringify({Message:"Séquence introuvable",fileName:"${safeName}"}); return JSON.stringify(AnalyseCut(seq, "${audioSuffix}", ${margin}, ${threshold})); } catch(err) { return JSON.stringify({Message:"Erreur JSX AnalyseCut: " + (err && err.message ? err.message : String(err)) + (err && err.line ? " (ligne " + err.line + ")" : ""), fileName:"${safeName}", isError:true}); } })()`,
-            1200000
+        const progress = onProgress || function () {};
+
+        // 1) Lancer l'export WAV (le JSX rend la main aussitôt après startBatch)
+        progress(`Lancement de l'export audio de ${sequenceName}...`, 2);
+        const startRaw = await this._evalWithTimeout(`startCutWavExport("${safeName}")`, 60000);
+        let start;
+        try { start = JSON.parse(startRaw); }
+        catch (e) { return { Message: "Réponse export invalide : " + startRaw, fileName: sequenceName }; }
+        if (!start.ok) {
+            return { Message: "Erreur export audio : " + start.error, fileName: sequenceName };
+        }
+
+        // 2) Attendre la fin réelle de l'export (taille du WAV stable).
+        //    Timeout proportionnel à la durée (AME ~0,2s/s de contenu observé) :
+        //    min 20 min, ou 0,5s par seconde de contenu (≈ 2× la marge réelle).
+        const exportTimeout = Math.max(20 * 60 * 1000, (start.durationSec || 0) * 500);
+        await this._waitFileStable(start.wavPath, start.durationSec, exportTimeout, (pct, mb) => {
+            progress(`Export audio de ${sequenceName}... ${mb} Mo`, pct);
+        });
+
+        // 3) Lancer l'analyse Python (ffmpeg + parse + zones de coupe)
+        progress(`Analyse audio de ${sequenceName}...`, 58);
+        const escAudio = start.audioPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const thrArg = (threshold === null || threshold === undefined) ? "" : threshold;
+        const pyRaw = await this._evalWithTimeout(
+            `startCutAnalysisPython("${escAudio}", "${safeName}", "${margin}", "${thrArg}", "${start.durationSec}")`,
+            60000
         );
-        return JSON.parse(result);
+        let py;
+        try { py = JSON.parse(pyRaw); }
+        catch (e) { return { Message: "Réponse analyse invalide : " + pyRaw, fileName: sequenceName }; }
+        if (!py.ok) {
+            return { Message: "Erreur lancement analyse : " + py.error, fileName: sequenceName };
+        }
+
+        // 4) Attendre le marqueur .done écrit par Python
+        await this._waitFileExists(py.donePath, 15 * 60 * 1000, () => {
+            progress(`Analyse audio de ${sequenceName} en cours...`, 78);
+        });
+
+        // 5) Lire le JSON de résultat (format identique à l'ancien AnalyseCut)
+        progress(`Lecture des résultats de ${sequenceName}...`, 96);
+        const jsonRaw = await this.readFile(py.outputJson);
+        try {
+            return JSON.parse(jsonRaw);
+        } catch (e) {
+            // Diagnostic : lire le log Python si le JSON est illisible
+            let detail = (jsonRaw || "").substring(0, 200);
+            try {
+                const logContent = await this.readFile(py.logPath);
+                if (logContent && logContent.indexOf("Traceback") !== -1) {
+                    detail = logContent.substring(Math.max(0, logContent.length - 300));
+                }
+            } catch (e2) {}
+            return { Message: "Résultat illisible : " + detail, fileName: sequenceName };
+        }
+    }
+
+    /** Promesse de délai (ms). */
+    _delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /** Retourne {exists, size} d'un fichier via JSX (pour le polling). */
+    async _getFileInfo(path) {
+        const safe = path.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        try {
+            const raw = await this._evalWithTimeout(`getFileInfo("${safe}")`, 15000);
+            return JSON.parse(raw);
+        } catch (e) {
+            return { exists: false, size: 0 };
+        }
+    }
+
+    /**
+     * Poll un fichier jusqu'à ce que sa taille soit stable (écriture terminée).
+     * @param {string} path - Fichier à surveiller
+     * @param {number} durationSec - Durée séquence (pour estimer le %)
+     * @param {number} maxMs - Timeout
+     * @param {Function} [onTick] - (percent, sizeMB)
+     */
+    async _waitFileStable(path, durationSec, maxMs, onTick) {
+        const step = 2000;
+        const stableNeeded = 4; // 4 × 2s = 8s de taille constante => export fini
+        const expected = Math.max(1, (durationSec || 1) * 190000); // ~48kHz/16bit stéréo
+        let waited = 0, lastSize = -1, stable = 0;
+
+        while (waited < maxMs) {
+            const info = await this._getFileInfo(path);
+            if (info.exists && info.size > 0) {
+                if (info.size === lastSize) {
+                    stable++;
+                    if (stable >= stableNeeded) return true;
+                } else {
+                    stable = 0;
+                }
+                lastSize = info.size;
+                if (onTick) {
+                    const mb = Math.round(info.size / 1048576);
+                    const pct = Math.max(2, Math.min(55, Math.round((info.size / expected) * 55)));
+                    onTick(pct, mb);
+                }
+            }
+            await this._delay(step);
+            waited += step;
+        }
+        throw new Error(`Timeout export WAV (${Math.round(maxMs / 60000)} min)`);
+    }
+
+    /** Poll un fichier jusqu'à son existence. */
+    async _waitFileExists(path, maxMs, onTick) {
+        const step = 2000;
+        let waited = 0;
+        while (waited < maxMs) {
+            const info = await this._getFileInfo(path);
+            if (info.exists) return true;
+            if (onTick) onTick();
+            await this._delay(step);
+            waited += step;
+        }
+        throw new Error(`Timeout analyse Python (${Math.round(maxMs / 60000)} min)`);
     }
 
     /**

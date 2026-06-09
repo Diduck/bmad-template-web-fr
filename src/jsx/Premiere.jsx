@@ -2199,6 +2199,159 @@ function AnalyseCut(sequence, suffixAudioUpgrade, margin, rmsThreshold) {
 }
 
 // ============================================================================
+// ANALYSE AUTO-CUT — VERSION ASYNCHRONE (export non-bloquant + Python)
+// ============================================================================
+
+/**
+ * Résout le dossier audio (07_Audio) via la 1ère vraie séquence du bin Rush1.
+ * Ignore les fichiers audio (.wav de mixage). Retourne le chemin avec
+ * backslash final, ou null si introuvable.
+ */
+function resolveCutAudioPath() {
+    var sequenceBin = searchBinByName(BIN_NAMES.SEQUENCES);
+    var binRush1 = searchBinByName(BIN_NAMES.RUSH1, sequenceBin);
+    if (!binRush1 || !binRush1.children) return null;
+
+    var trackClip = null;
+    for (var ci = 0; ci < binRush1.children.numItems; ci++) {
+        var child = binRush1.children[ci];
+        if (!child.isSequence || !child.isSequence()) continue;
+        var childSeq = searchSequenceByName(child.name);
+        if (childSeq && childSeq.videoTracks.numTracks > 0 && childSeq.videoTracks[0].clips.numItems > 0) {
+            trackClip = childSeq.videoTracks[0].clips[0];
+            break;
+        }
+    }
+    if (!trackClip) return null;
+
+    var rushFolder = getFolderPath(trackClip);
+    var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
+    var audioFolder = new Folder(audioFolderBin);
+    if (!audioFolder || !(audioFolder instanceof Folder)) return null;
+    return audioFolder.fsName + "\\";
+}
+
+/**
+ * (ASYNC) Lance l'export WAV d'une séquence SANS attendre la fin (FONCTION PUBLIQUE).
+ * Retourne immédiatement les chemins ; c'est le JS qui poll la taille du WAV.
+ * @returns {string} JSON {ok, audioPath, wavPath, durationSec} ou {ok:false, error}
+ */
+function startCutWavExport(seqName) {
+    try {
+        var audioPath = resolveCutAudioPath();
+        if (!audioPath) {
+            return JSON.stringify({ ok: false, error: "Dossier audio introuvable (bin " + BIN_NAMES.RUSH1 + ")" });
+        }
+
+        var seq = searchSequenceByName(seqName);
+        if (!seq) {
+            return JSON.stringify({ ok: false, error: "Séquence introuvable : " + seqName });
+        }
+
+        var wavPath = audioPath + seqName + ".wav";
+        var durationSec = ticksToSeconds(seq.end);
+
+        // Supprime l'ancien WAV pour repartir propre
+        var f = new File(wavPath);
+        if (f.exists) {
+            try { f.remove(); $.sleep(200); } catch (eDel) {}
+        }
+
+        notif("Export audio de " + seqName + "...", "warning");
+
+        launchAndWaitForAME();
+        var jobID = queueEncodingJob(seq, wavPath, WAVFOLDERPRESET);
+        MediaEncoder.startBatch();
+
+        focusPremiereFront(CONSTANTS.FOCUS_PREMIERE_DELAY_MS);
+        focusPremiereFront(CONSTANTS.FOCUS_PREMIERE_RETRY_MS);
+
+        return JSON.stringify({
+            ok: true,
+            audioPath: audioPath,
+            wavPath: wavPath,
+            durationSec: durationSec,
+            jobID: jobID
+        });
+    } catch (e) {
+        return JSON.stringify({ ok: false, error: e.toString() + (e.line ? " (ligne " + e.line + ")" : "") });
+    }
+}
+
+/**
+ * Retourne {exists, size} d'un fichier (FONCTION PUBLIQUE — polling JS).
+ */
+function getFileInfo(path) {
+    var f = new File(path);
+    if (!f.exists) return JSON.stringify({ exists: false, size: 0 });
+    return JSON.stringify({ exists: true, size: f.length });
+}
+
+/**
+ * (ASYNC) Lance l'analyse de coupes en Python via bat/vbs (FONCTION PUBLIQUE).
+ * Python fait ffmpeg astats + parse + zones + downsample, puis écrit
+ * <seqName>_cuts.json et <seqName>_cuts.done. Le JS poll le .done.
+ * @returns {string} JSON {ok, outputJson, donePath, logPath} ou {ok:false, error}
+ */
+function startCutAnalysisPython(audioPath, seqName, margin, threshold, durationSec) {
+    try {
+        var pythonScript = EXT_ROOT + "\\scripts\\cut_analysis\\analyze_cuts.py";
+        var wavPath = audioPath + seqName + ".wav";
+        var outputJson = audioPath + seqName + "_cuts.json";
+        var donePath = audioPath + seqName + "_cuts.done";
+        var logPath = audioPath + seqName + "_cuts.log";
+        var ffmpegDir = EXT_ROOT + "\\bin";
+
+        // Nettoyage des anciens marqueurs
+        var olds = [outputJson, donePath, logPath];
+        for (var oi = 0; oi < olds.length; oi++) {
+            var ofile = new File(olds[oi]);
+            if (ofile.exists) { try { ofile.remove(); } catch (eRm) {} }
+        }
+
+        var thresholdArg = (threshold === null || threshold === undefined || threshold === "") ? "" : String(threshold);
+
+        var command =
+            '@echo off\n' +
+            'setlocal\n' +
+            'set "PATH=' + ffmpegDir + ';%PATH%"\n' +
+            'python "' + pythonScript + '" "' + wavPath + '" "' + margin + '" "' + thresholdArg + '" "' + outputJson + '" "' + durationSec + '" "30" > "' + logPath + '" 2>&1\n' +
+            'endlocal\n';
+
+        var batFilePath = audioPath + "run_cut_analysis.bat";
+        var batFile = new File(batFilePath);
+        if (!batFile.open("w")) {
+            return JSON.stringify({ ok: false, error: "Impossible de créer le .bat" });
+        }
+        batFile.write(command);
+        batFile.close();
+
+        var vbsFilePath = audioPath + "run_cut_analysis.vbs";
+        var vbsFile = new File(vbsFilePath);
+        if (!vbsFile.open("w")) {
+            return JSON.stringify({ ok: false, error: "Impossible de créer le .vbs" });
+        }
+        var vbs =
+            'Set sh = CreateObject("WScript.Shell")\r\n' +
+            'sh.Run "cmd.exe /c ""' + batFile.fsName.replace(/"/g, '""') + '""", 0, True\r\n';
+        vbsFile.write(vbs);
+        vbsFile.close();
+        vbsFile.execute();
+
+        notif("Analyse audio de " + seqName + " en cours...", "warning");
+
+        return JSON.stringify({
+            ok: true,
+            outputJson: outputJson,
+            donePath: donePath,
+            logPath: logPath
+        });
+    } catch (e) {
+        return JSON.stringify({ ok: false, error: e.toString() + (e.line ? " (ligne " + e.line + ")" : "") });
+    }
+}
+
+// ============================================================================
 // STEP 2 - TRAITEMENT AVANCÉ
 // ============================================================================
 

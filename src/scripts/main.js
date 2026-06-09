@@ -435,9 +435,18 @@ document.addEventListener("DOMContentLoaded", async function () {
                 const outputs = [];
                 for (let i = 0; i < listSequences.length; i++) {
                     const seq = listSequences[i];
-                    loadingScreen.setMessage(`${MESSAGES.ANALYZING_CUTS} ${seq} (${i + 1}/${listSequences.length})`);
+                    const seqLabel = `${seq} (${i + 1}/${listSequences.length})`;
+                    loadingScreen.setMessage(`${MESSAGES.ANALYZING_CUTS} ${seqLabel}`);
                     try {
-                        const output = await premiereAsync.analyzeCutForSequence(seq, suffixAudio, margeCuts, limiteCuts);
+                        const output = await premiereAsync.analyzeCutForSequence(
+                            seq, suffixAudio, margeCuts, limiteCuts,
+                            (message, percent) => {
+                                loadingScreen.setMessage(`${message} ${seqLabel}`);
+                                if (typeof percent === 'number') {
+                                    loadingScreen.setProgress(percent, seqLabel);
+                                }
+                            }
+                        );
                         outputs.push(output);
                     } catch (error) {
                         ErrorHandler.handle(error, 'analyzeCut', `Erreur analyse pour ${seq}`);
