@@ -306,6 +306,35 @@ function getFolderPath(clip) {
     return folderPath;
 }
 
+/**
+ * Cherche le 1er clip de la séquence qui pointe vers un VRAI fichier média
+ * (rush). Ignore les clips sans média sur disque : titres, MOGRT, calques
+ * d'effets, color mattes, etc. dont getMediaPath() renvoie "". Descend
+ * récursivement dans les séquences imbriquées (ex. INTRO démarrant par une
+ * animation graphique avant le rush). Renvoie le chemin média complet ou "".
+ */
+function getRushMediaPathFromSequence(sequence, depth) {
+    if (!sequence || (depth || 0) > 5 || !sequence.videoTracks) {
+        return "";
+    }
+    for (var t = 0; t < sequence.videoTracks.numTracks; t++) {
+        var track = sequence.videoTracks[t];
+        for (var c = 0; c < track.clips.numItems; c++) {
+            var clip = track.clips[c];
+            if (!clip || !clip.projectItem) continue;
+            if (clip.projectItem.isSequence && clip.projectItem.isSequence() === true) {
+                var nested = searchSequenceByName(clip.projectItem.name);
+                var nestedPath = getRushMediaPathFromSequence(nested, (depth || 0) + 1);
+                if (nestedPath) return nestedPath;
+                continue;
+            }
+            var mp = clip.projectItem.getMediaPath();
+            if (mp && mp.length > 0) return mp;
+        }
+    }
+    return "";
+}
+
 // Chemins globaux
 var EXT_ROOT = getExtensionRootFromThisFile();
 var FFMPEGPATH = EXT_ROOT + "\\bin\\ffmpeg.exe";
@@ -1089,7 +1118,21 @@ function importAudioUpgrades(suffixAudioUpgrade, binRush1) {
         return;
     }
 
-    var trackClip = searchSequenceByName(binRush1.children[0].name).videoTracks[0].clips[0];
+    // 1re VRAIE séquence vidéo du bin (ignore les .wav audio améliorés importés
+    // dans Rush1, les calques d'effets, etc. — sinon children[0] peut être un
+    // .wav et searchSequenceByName(...).videoTracks plante).
+    var rushSeq = null;
+    for (var ri = 0; ri < binRush1.children.numItems; ri++) {
+        var rchild = binRush1.children[ri];
+        if (!rchild || !rchild.isSequence || !rchild.isSequence()) continue;
+        var rseq = searchSequenceByName(rchild.name);
+        if (rseq && rseq.videoTracks && rseq.videoTracks.numTracks > 0 &&
+            rseq.videoTracks[0].clips.numItems > 0) { rushSeq = rseq; break; }
+    }
+    if (!rushSeq) {
+        return;
+    }
+    var trackClip = rushSeq.videoTracks[0].clips[0];
     var rushFolder = getFolderPath(trackClip);
     var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
     var audioFolder = new Folder(audioFolderBin + "Audio");
@@ -1447,20 +1490,23 @@ function CreateSTR(sequence, OptionPresetStyle) {
     var subtitleChutier = searchOrCreateBin(BIN_NAMES.SUBTITLES);
     var trashChutier = searchOrCreateBin(BIN_NAMES.TRASH);
 
-    var rushSeq = searchSequenceByName(binRush1.children[0].name);
-    if (!rushSeq || !rushSeq.videoTracks[0] || rushSeq.videoTracks[0].clips.numItems === 0) {
-        throw new Error("Séquence Rush introuvable ou vide : " + binRush1.children[0].name);
+    // Résout le rush DEPUIS la séquence traitée (INTRO, FACE…) et NON
+    // binRush1.children[0] : ce dernier pointe sur le 1er élément du bin Rush1
+    // (souvent un autre rush ou un fichier audio .wav) → dossier de la MAUVAISE
+    // séquence, voire crash si c'est un .wav (searchSequenceByName renvoie null).
+    if (!sequence.videoTracks || sequence.videoTracks.numTracks === 0 ||
+        sequence.videoTracks[0].clips.numItems === 0) {
+        throw new Error("Séquence vidéo introuvable ou vide : " + sequence.name);
     }
-    var trackClip = rushSeq.videoTracks[0].clips[0];
-    if (trackClip.projectItem.isSequence() === true) {
-        var nestedSeq = searchSequenceByName(trackClip.projectItem.name);
-        if (!nestedSeq || !nestedSeq.videoTracks[0] || nestedSeq.videoTracks[0].clips.numItems === 0) {
-            throw new Error("Séquence imbriquée introuvable ou vide : " + trackClip.projectItem.name);
-        }
-        trackClip = nestedSeq.videoTracks[0].clips[0];
+    // Le 1er clip de V1 n'est PAS forcément le rush : sur une séquence INTRO il
+    // peut s'agir d'un titre/MOGRT/animation graphique (getMediaPath() == "").
+    // On balaye tracks + clips (et les séquences imbriquées) pour trouver le 1er
+    // clip avec un vrai fichier média, sinon le dossier audio est indéterminable.
+    var rushMediaPath = getRushMediaPathFromSequence(sequence, 0);
+    if (!rushMediaPath) {
+        throw new Error("Aucun clip avec média (rush) trouvé dans la séquence : " + sequence.name);
     }
-
-    var rushFolder = getFolderPath(trackClip);
+    var rushFolder = rushMediaPath.substring(0, rushMediaPath.lastIndexOf("\\") + 1);
     var audioFolderBin = getAudioFolderFromRushFolder(rushFolder);
     if (!audioFolderBin) {
         throw new Error("Impossible de déterminer le dossier audio depuis le rush");
