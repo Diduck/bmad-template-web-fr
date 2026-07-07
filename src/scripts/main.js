@@ -18,6 +18,34 @@ import ClaudeClient from './api/claude.js';
 import { COMPONENTS, PATHS, SEQUENCE, MESSAGES, SUCCESS, ERRORS, SUBTITLES, SELECTION_MODES, MOTION_DESIGN, AI_PROVIDERS } from './utils/constants.js';
 import { safePayload, removeExtension } from './utils/helpers.js';
 
+// ── MARQUEUR DE CHARGEMENT (DIAGNOSTIC TEMPORAIRE) ──
+// S'exécute dès que le module main.js est évalué. S'il n'apparaît PAS au
+// rechargement de la page, c'est que main.js ne se charge pas du tout sur
+// cette page (cache CEP, mauvaise page, ou import qui échoue en amont).
+try { console.log('[DEBUG] main.js chargé — page:', location && location.pathname); } catch (_) {}
+
+// ── Capteur global d'erreurs d'init (DIAGNOSTIC TEMPORAIRE) ──
+// Toute l'init tient dans un seul DOMContentLoaded (contrainte CEP : plusieurs
+// DOMContentLoaded cassent l'app). Conséquence : une exception AVANT l'attache
+// des listeners (fin de l'init) désactive tous les boutons SANS aucun message.
+// On rend cette erreur visible (une seule fois) pour identifier la ligne fautive.
+var __initErrShown = false;
+function __showInitErr(label, detail) {
+    if (__initErrShown) return;
+    __initErrShown = true;
+    try { alert(label + '\n' + detail); } catch (_) {}
+    try { console.error(label, detail); } catch (_) {}
+}
+window.addEventListener('error', function (e) {
+    __showInitErr('[INIT ERROR] ' + (e && e.message ? e.message : e),
+        (e && e.error && e.error.stack) || (e && e.filename ? (e.filename + ':' + e.lineno) : ''));
+});
+window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    __showInitErr('[INIT REJECT] ' + ((r && r.message) || r),
+        (r && r.stack) || '');
+});
+
 /**
  * Main application initialization
  */
@@ -305,24 +333,34 @@ document.addEventListener("DOMContentLoaded", async function () {
      * Execute step 1: Create sequences
      */
     async function handleStep1Execute() {
+        console.log('[STEP1] >>> handleStep1Execute ENTREE');
         loadingScreen.show(MESSAGES.CREATING_SEQUENCES);
+        console.log('[STEP1] loadingScreen.show OK');
         try {
             const optionAudio = components[COMPONENTS.OPTION_AUDIO].getValue();
             const suffixAudio = components[COMPONENTS.SUFFIX_AUDIO].getValue();
             const selectedFormat = components[COMPONENTS.FORMAT_SELECTION].getValue();
+            console.log('[STEP1] valeurs composants:', { optionAudio, suffixAudio, selectedFormat });
 
+            console.log('[STEP1] avant executeStep1 (evalScript JSX)...');
             const result = await premiereAsync.executeStep1(
                 optionAudio,
                 suffixAudio,
                 selectedFormat
             );
+            console.log('[STEP1] APRES executeStep1 — result =', JSON.stringify(result));
 
-            if (result !== "Error") {
-                notifications.success(SUCCESS.SEQUENCES_CREATED);
+            // STEP1_EXECUTE émet désormais lui-même un toast précis
+            // (succès chiffré / avertissement / erreur). On ne double pas le
+            // message ; on ne couvre ici que l'échec de communication evalScript.
+            if (typeof result === "string" && result.indexOf("EvalScript error") !== -1) {
+                notifications.error("Erreur de communication avec Premiere (Step1).");
             }
         } catch (error) {
+            console.error('[STEP1] EXCEPTION dans handleStep1Execute:', error);
             ErrorHandler.handle(error, 'handleStep1Execute');
         } finally {
+            console.log('[STEP1] finally — loadingScreen.hide');
             loadingScreen.hide();
         }
     }
@@ -1070,11 +1108,21 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     });
 
+    // ── MARQUEUR FIN D'INIT (DIAGNOSTIC TEMPORAIRE) ──
+    // Si cette alerte s'affiche : l'init est allée au bout et le listener de
+    // clic est attaché → le souci est dans le handler du bouton.
+    // Si elle ne s'affiche PAS (alors que le marqueur du haut, lui, s'affiche) :
+    // l'init se bloque quelque part avant (un await qui ne répond jamais).
+    try { console.log('[DEBUG] init terminée — listener boutons attaché'); } catch (_) {}
+
     // Button clicks
     document.addEventListener("click", async function (event) {
         const target = event.target;
         const targetId = target.id;
         const targetClass = target.classList[0];
+
+        // ── SONDE CLIC (DIAGNOSTIC TEMPORAIRE) ──
+        console.log('[CLIC] tag=' + target.tagName + ' id="' + targetId + '" class="' + targetClass + '"');
 
         if (target.tagName === "BUTTON" || target.tagName === "IMG" ||
             (target.tagName === "DIV" && (targetClass === "bar" || targetClass === "content-bar"))) {
@@ -1086,6 +1134,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
             event.preventDefault();
 
+            console.log('[CLIC] entre dans le switch avec id="' + targetId + '"');
             switch (targetId) {
                 case "workflow":
                     await handleCreateWorkflow();
@@ -1141,22 +1190,44 @@ document.addEventListener("DOMContentLoaded", async function () {
                     }
                     break;
 
-                case "AssemblyButton":
+                case "AssemblyButton": {
+                    console.log('[STEP4] >>> AssemblyButton ENTREE');
                     loadingScreen.show(MESSAGES.ASSEMBLING);
                     try {
-                        await csInterface.evalScript(
-                            `STEP4_EXECUTE(${components[COMPONENTS.OPTION_FORMAT_PHONE].getValue()}, ` +
-                            `${components[COMPONENTS.OPTION_FORMAT_HORIZONTAL].getValue()}, ` +
-                            `${components[COMPONENTS.OPTION_FORMAT_SQUARE].getValue()}, ` +
-                            `${components[COMPONENTS.OPTION_FORMAT_PORTRAIT].getValue()})`,
-                            function () {}
-                        );
+                        const fPhone = components[COMPONENTS.OPTION_FORMAT_PHONE].getValue();
+                        const fHorizontal = components[COMPONENTS.OPTION_FORMAT_HORIZONTAL].getValue();
+                        const fSquare = components[COMPONENTS.OPTION_FORMAT_SQUARE].getValue();
+                        const fPortrait = components[COMPONENTS.OPTION_FORMAT_PORTRAIT].getValue();
+                        console.log('[STEP4] formats lus -> Phone=' + fPhone + ' Horizontal=' + fHorizontal +
+                            ' Square=' + fSquare + ' Portrait=' + fPortrait,
+                            '(types:', typeof fPhone, typeof fHorizontal, typeof fSquare, typeof fPortrait, ')');
+
+                        const script = `STEP4_EXECUTE(${fPhone}, ${fHorizontal}, ${fSquare}, ${fPortrait})`;
+                        console.log('[STEP4] script JSX envoyé:', script);
+
+                        // evalScript n'est PAS une promesse : on le promisifie pour
+                        // vraiment attendre la fin de STEP4 et récupérer son retour.
+                        const raw = await new Promise((resolve) => {
+                            csInterface.evalScript(script, (r) => resolve(r));
+                        });
+                        console.log('[STEP4] réponse brute JSX:', JSON.stringify(raw));
+
+                        if (typeof raw === 'string' && raw.indexOf('EvalScript error') !== -1) {
+                            notifications.error('Erreur de communication avec Premiere (STEP4).');
+                        } else {
+                            let res = null;
+                            try { res = JSON.parse(raw); } catch (_) {}
+                            console.log('[STEP4] résultat parsé:', res);
+                            // STEP4_EXECUTE notifie déjà (succès/erreur) ; ce log donne le détail.
+                        }
                     } catch (error) {
+                        console.error('[STEP4] EXCEPTION handler AssemblyButton:', error);
                         ErrorHandler.handle(error, 'AssemblyButton');
                     } finally {
                         loadingScreen.hide();
                     }
                     break;
+                }
             }
 
             // Handle waveform clicks

@@ -1246,49 +1246,63 @@ function STEP1_EXECUTE(OptionAudio, suffixAudioUpgrade, selectedformat) {
         }
 
         // Phase B : Traiter chaque groupe
+        // Chaque groupe est isolé dans son propre try/catch : un rush qui plante
+        // ne doit pas avorter SILENCIEUSEMENT tout l'export (sinon "ça crée les
+        // chutiers mais aucune séquence" sans message d'erreur).
+        var createdCount = 0;
+        var skippedCount = 0;
+        var groupErrors = [];
+
         for (var baseName in groups) {
-            // Skip si séquence existe déjà
-            if (searchSequenceByName(baseName)) {
-                continue;
-            }
-
-            // Trier les parties par numéro
-            groups[baseName].sort(function(a, b) { return a.partNumber - b.partNumber; });
-            var parts = groups[baseName];
-
-            // Trouver le clip de base (part 1)
-            var baseClip = searchClipByName(parts[0].clipName, rushBin);
-            if (!baseClip) {
-                notif("Clip " + parts[0].clipName + " introuvable.", "error");
-                continue;
-            }
-
-            // 1. Crée la séquence principale
-            var mainSeq = createSequenceFromRush(baseClip, baseName, binRush2, format);
-
-            // 2. Crée la séquence Rush avec le clip de base
-            var rushResult = createRushSequence(baseClip, baseName, binRush1, mainSeq.getSettings());
-            if (!rushResult) {
-                continue;
-            }
-
-            // 3. Ajouter les parties suivantes au Rush_
-            for (var j = 1; j < parts.length; j++) {
-                var partClip = searchClipByName(parts[j].clipName, rushBin);
-                if (partClip) {
-                    addClipToRushSequence(partClip, rushResult.sequence);
+            try {
+                // Skip si séquence existe déjà
+                if (searchSequenceByName(baseName)) {
+                    skippedCount++;
+                    continue;
                 }
+
+                // Trier les parties par numéro
+                groups[baseName].sort(function(a, b) { return a.partNumber - b.partNumber; });
+                var parts = groups[baseName];
+
+                // Trouver le clip de base (part 1)
+                var baseClip = searchClipByName(parts[0].clipName, rushBin);
+                if (!baseClip) {
+                    groupErrors.push(baseName + " : clip \"" + parts[0].clipName +
+                        "\" introuvable dans [" + BIN_NAMES.RUSHS + "] (sous-dossier ? renommé ?)");
+                    continue;
+                }
+
+                // 1. Crée la séquence principale
+                var mainSeq = createSequenceFromRush(baseClip, baseName, binRush2, format);
+
+                // 2. Crée la séquence Rush avec le clip de base
+                var rushResult = createRushSequence(baseClip, baseName, binRush1, mainSeq.getSettings());
+                if (!rushResult) {
+                    groupErrors.push(baseName + " : échec création de la séquence Rush_" + baseName);
+                    continue;
+                }
+
+                // 3. Ajouter les parties suivantes au Rush_
+                for (var j = 1; j < parts.length; j++) {
+                    var partClip = searchClipByName(parts[j].clipName, rushBin);
+                    if (partClip) {
+                        addClipToRushSequence(partClip, rushResult.sequence);
+                    }
+                }
+
+                // 4. Imbriquer le Rush_ COMPLET dans la séquence principale
+                var rushItemSequence = getSequenceProjectItemByName("Rush_" + baseName, binRush1);
+                insertNestedSequence(rushItemSequence, mainSeq);
+
+                // 5. Export audio si nécessaire (clip de base)
+                exportAudioIfNeeded(OptionAudio, rushResult.sequence, baseName, rushResult.clip);
+
+                createdCount++;
+            } catch (eGroup) {
+                groupErrors.push(baseName + " : " + eGroup.message);
             }
-
-            // 4. Imbriquer le Rush_ COMPLET dans la séquence principale
-            var rushItemSequence = getSequenceProjectItemByName("Rush_" + baseName, binRush1);
-            insertNestedSequence(rushItemSequence, mainSeq);
-
-            // 5. Export audio si nécessaire (clip de base)
-            exportAudioIfNeeded(OptionAudio, rushResult.sequence, baseName, rushResult.clip);
         }
-
-        notif("Execution réussie", "success");
 
         // Import des audios avec suffixe
         importAudioUpgrades(suffixAudioUpgrade, binRush1);
@@ -1296,9 +1310,30 @@ function STEP1_EXECUTE(OptionAudio, suffixAudioUpgrade, selectedformat) {
         // Crée le dossier audio
         ensureProjectAudioFolder();
 
+        // Reporting explicite (fini le faux "succès" silencieux)
+        if (groupErrors.length > 0) {
+            notif("Step1 : " + createdCount + " séquence(s) créée(s), " +
+                groupErrors.length + " en erreur — " + groupErrors.join(" | "), "error");
+            return "Error";
+        }
+
+        if (createdCount === 0) {
+            if (skippedCount > 0) {
+                notif("Step1 : aucune nouvelle séquence (" + skippedCount +
+                    " déjà existante(s)).", "warning");
+            } else {
+                notif("Step1 : aucune séquence créée — aucun rush exploitable dans [" +
+                    BIN_NAMES.RUSHS + "].", "error");
+                return "Error";
+            }
+        } else {
+            notif(createdCount + " séquence(s) créée(s) avec succès.", "success");
+        }
+
     } catch (e) {
-        logMessage("Erreur : " + e.message);
-        return "Erreur : " + e.message;
+        logMessage("Erreur Step1 : " + e.message);
+        notif("Erreur Step1 : " + e.message, "error");
+        return "Error";
     }
 
     return "Succès";
@@ -3329,61 +3364,99 @@ function generateCombinationsForAd(ads, allHooks, allCTAs, globalHooks, globalCT
  * STEP4 - Génération des formats d'export (FONCTION PUBLIQUE)
  */
 function STEP4_EXECUTE(OptionVertical, OptionHorizontal, OptionCarre, OptionPortrait) {
-    var sequenceBin = searchOrCreateBin(BIN_NAMES.SEQUENCES);
-    var binRush2 = searchBinByName(BIN_NAMES.RUSH2, sequenceBin);
-
-    if (!binRush2) {
-        notif("Le chutier [Rush2] n'existe pas dans [00_Sequences].", "error");
-        return;
-    }
-
-    var binExport = searchOrCreateBin(BIN_NAMES.EXPORT, sequenceBin);
-    var binVertical = OptionVertical ? searchOrCreateBin(BIN_NAMES.VERTICAL, binExport) : null;
-    var binHorizontal = OptionHorizontal ? searchOrCreateBin(BIN_NAMES.HORIZONTAL, binExport) : null;
-    var binCarre = OptionCarre ? searchOrCreateBin(BIN_NAMES.CARRE, binExport) : null;
-    var binPortrait = OptionPortrait ? searchOrCreateBin(BIN_NAMES.PORTRAIT, binExport) : null;
-
-    var allADS = [];
-    var allHooks = [];
-    var allCTAs = [];
-
-    // Partition des séquences
-    for (var i = 0; i < binRush2.children.numItems; i++) {
-        var it = binRush2.children[i];
-        if (!it.isSequence()) continue;
-
-        var n = it.name.toLowerCase();
-        if (n.indexOf("hook") !== -1 || n.match(/(^|[^a-z])h[0-9]+/i)) {
-            allHooks.push(it);
-        } else if (n.indexOf("cta") !== -1) {
-            allCTAs.push(it);
-        } else {
-            allADS.push(it);
+    try {
+        // Coercition robuste : selon comment le JS interpole, on peut recevoir
+        // un booléen, la chaîne "true"/"false", "1"/"0", etc.
+        function toBool(v) {
+            return v === true || v === "true" || v === 1 || v === "1";
         }
-    }
+        OptionVertical = toBool(OptionVertical);
+        OptionHorizontal = toBool(OptionHorizontal);
+        OptionCarre = toBool(OptionCarre);
+        OptionPortrait = toBool(OptionPortrait);
 
-    // Filtrage des hooks et CTAs globaux
-    var globalHooks = filterGlobalItems(allHooks, allADS);
-    var globalCTAs = filterGlobalItems(allCTAs, allADS);
+        var opts = { V: OptionVertical, H: OptionHorizontal, C: OptionCarre, P: OptionPortrait };
 
-    // Génération des combinaisons pour chaque Ad
-    for (var ai = 0; ai < allADS.length; ai++) {
-        generateCombinationsForAd(
-            allADS[ai],
-            allHooks,
-            allCTAs,
-            globalHooks,
-            globalCTAs,
-            binRush2,
-            binVertical,
-            binHorizontal,
-            binCarre,
-            binPortrait,
-            OptionVertical,
-            OptionHorizontal,
-            OptionCarre,
-            OptionPortrait
-        );
+        // Garde-fou : au moins un format doit être sélectionné, sinon AUCUN
+        // createFormattedSequence n'est appelé (tout est gardé par if(OptionX)).
+        if (!OptionVertical && !OptionHorizontal && !OptionCarre && !OptionPortrait) {
+            notif("Aucun format d'export coché (Phone / Horizontal / Carré / Portrait).", "error");
+            return JSON.stringify({ status: "error", created: 0, opts: opts, msg: "Aucun format sélectionné" });
+        }
+
+        var sequenceBin = searchOrCreateBin(BIN_NAMES.SEQUENCES);
+        var binRush2 = searchBinByName(BIN_NAMES.RUSH2, sequenceBin);
+
+        if (!binRush2) {
+            notif("Le chutier [Rush2] n'existe pas dans [00_Sequences]. Lance d'abord la création des séquences.", "error");
+            return JSON.stringify({ status: "error", created: 0, opts: opts, msg: "Rush2 introuvable" });
+        }
+
+        var binExport = searchOrCreateBin(BIN_NAMES.EXPORT, sequenceBin);
+        var binVertical = OptionVertical ? searchOrCreateBin(BIN_NAMES.VERTICAL, binExport) : null;
+        var binHorizontal = OptionHorizontal ? searchOrCreateBin(BIN_NAMES.HORIZONTAL, binExport) : null;
+        var binCarre = OptionCarre ? searchOrCreateBin(BIN_NAMES.CARRE, binExport) : null;
+        var binPortrait = OptionPortrait ? searchOrCreateBin(BIN_NAMES.PORTRAIT, binExport) : null;
+
+        var allADS = [];
+        var allHooks = [];
+        var allCTAs = [];
+
+        // Partition des séquences
+        for (var i = 0; i < binRush2.children.numItems; i++) {
+            var it = binRush2.children[i];
+            if (!it.isSequence()) continue;
+
+            var n = it.name.toLowerCase();
+            if (n.indexOf("hook") !== -1 || n.match(/(^|[^a-z])h[0-9]+/i)) {
+                allHooks.push(it);
+            } else if (n.indexOf("cta") !== -1) {
+                allCTAs.push(it);
+            } else {
+                allADS.push(it);
+            }
+        }
+
+        if (allADS.length === 0) {
+            notif("STEP4 : aucune séquence \"Ad\" dans [Rush2] (" + allHooks.length +
+                " hook(s), " + allCTAs.length + " CTA(s)).", "error");
+            return JSON.stringify({ status: "empty", created: 0, opts: opts,
+                ads: 0, hooks: allHooks.length, ctas: allCTAs.length });
+        }
+
+        // Filtrage des hooks et CTAs globaux
+        var globalHooks = filterGlobalItems(allHooks, allADS);
+        var globalCTAs = filterGlobalItems(allCTAs, allADS);
+
+        var seqBefore = project.sequences.numSequences;
+
+        // Génération des combinaisons pour chaque Ad
+        for (var ai = 0; ai < allADS.length; ai++) {
+            generateCombinationsForAd(
+                allADS[ai], allHooks, allCTAs, globalHooks, globalCTAs, binRush2,
+                binVertical, binHorizontal, binCarre, binPortrait,
+                OptionVertical, OptionHorizontal, OptionCarre, OptionPortrait
+            );
+        }
+
+        var created = project.sequences.numSequences - seqBefore;
+
+        if (created <= 0) {
+            notif("STEP4 : 0 séquence d'export générée alors que " + allADS.length +
+                " Ad détectée(s). Vérifie createFormattedSequence / les noms.", "error");
+            return JSON.stringify({ status: "empty", created: 0, opts: opts,
+                ads: allADS.length, hooks: allHooks.length, ctas: allCTAs.length });
+        }
+
+        notif(created + " séquence(s) d'export générée(s) à partir de " +
+            allADS.length + " Ad.", "success");
+        return JSON.stringify({ status: "ok", created: created, opts: opts,
+            ads: allADS.length, hooks: allHooks.length, ctas: allCTAs.length });
+
+    } catch (e) {
+        logMessage("Erreur STEP4 : " + e.message);
+        notif("Erreur STEP4 : " + e.message, "error");
+        return JSON.stringify({ status: "error", created: 0, msg: e.message });
     }
 }
 

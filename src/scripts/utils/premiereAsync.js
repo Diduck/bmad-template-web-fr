@@ -121,11 +121,13 @@ class PremiereAsync {
      * @returns {Promise<string>} Result
      */
     async executeStep1(optionAudio, suffixAudio, selectedFormat) {
+        const script = `STEP1_EXECUTE(${optionAudio}, "${suffixAudio}", "${selectedFormat}")`;
+        console.log('[STEP1] executeStep1 — script JSX envoyé:', script);
         return new Promise((resolve) => {
-            this.csInterface.evalScript(
-                `STEP1_EXECUTE(${optionAudio}, "${suffixAudio}", "${selectedFormat}")`,
-                resolve
-            );
+            this.csInterface.evalScript(script, (raw) => {
+                console.log('[STEP1] executeStep1 — réponse brute JSX:', JSON.stringify(raw));
+                resolve(raw);
+            });
         });
     }
 
